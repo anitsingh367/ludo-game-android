@@ -68,14 +68,15 @@ data class LudoPalette(
     fun of(color: PlayerColor): SeatColors = of(color.seat())
 }
 
-private val Red = SeatColors(Color(0xFFE53935), Color(0xFF9E1B17), Color(0xFFFFCDD2))
-private val Green = SeatColors(Color(0xFF43A047), Color(0xFF1B5E20), Color(0xFFC8E6C9))
-private val Yellow = SeatColors(Color(0xFFFDD835), Color(0xFFB08A00), Color(0xFFFFF59D))
-private val Blue = SeatColors(Color(0xFF1E88E5), Color(0xFF0D47A1), Color(0xFFBBDEFB))
+// Warm, printed-looking colors (flat on the board).
+private val Red = SeatColors(Color(0xFFD9443A), Color(0xFF9A2A22), Color(0xFFF4B7B1))
+private val Green = SeatColors(Color(0xFF3F9B4F), Color(0xFF276A34), Color(0xFFB5DDBB))
+private val Yellow = SeatColors(Color(0xFFEDBE2E), Color(0xFFA8821A), Color(0xFFF8E2A0))
+private val Blue = SeatColors(Color(0xFF2F7FCF), Color(0xFF1D5A99), Color(0xFFB2D2F0))
 
 private val LightPalette = LudoPalette(
     red = Red, green = Green, yellow = Yellow, blue = Blue,
-    track = Color.White, trackLine = Color(0xFFD5D8DC),
+    track = Color(0xFFFBF6EA), trackLine = Color(0xFF3B2F2A).copy(alpha = 0.55f),
     frameLight = Color(0xFFF3C969), frameDark = Color(0xFFA86B22), gold = Color(0xFFFFC107),
     backgroundTop = Color(0xFF3F51B5), backgroundBottom = Color(0xFF7B1FA2),
     amber = Color(0xFFEF7C00),
