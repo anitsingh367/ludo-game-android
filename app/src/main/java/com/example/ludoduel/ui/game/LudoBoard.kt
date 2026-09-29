@@ -11,6 +11,7 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -77,8 +78,9 @@ fun LudoBoard(
     val currentMovable by rememberUpdatedState(movable)
     val currentTap by rememberUpdatedState(onTokenTap)
 
+    BoardFrame(me, modifier) {
     Canvas(
-        modifier
+        Modifier.fillMaxSize()
             .semantics { contentDescription = description }
             .pointerInput(me) {
                 detectTapGestures { tap ->
@@ -94,7 +96,6 @@ fun LudoBoard(
             },
     ) {
         val unit = size.width / BoardGeometry.SIZE
-        drawBoard(colors, me, unit)
         val movableKeys = movable.map { TokenKey(me, it) }.toSet()
         // Movable tokens are drawn last so they sit on top of any stack.
         val order = targets.keys.sortedBy { it in movableKeys }
@@ -106,6 +107,7 @@ fun LudoBoard(
             }
             drawToken(colors, key.color, center, radius, textMeasurer)
         }
+    }
     }
 }
 
@@ -148,86 +150,6 @@ private fun rememberTokenPositions(
         }
     }
     return anims
-}
-
-private fun DrawScope.drawBoard(colors: BoardColors, viewer: PlayerColor, unit: Float) {
-    drawRect(colors.board)
-
-    fun rect(x: Float, y: Float, w: Float, h: Float): Pair<Offset, Size> {
-        val (rx, ry) = if (viewer == PlayerColor.RED) x to y else (BoardGeometry.SIZE - x - w) to (BoardGeometry.SIZE - y - h)
-        return Offset(rx * unit, ry * unit) to Size(w * unit, h * unit)
-    }
-
-    fun cell(c: Cell, fill: Color) {
-        val v = BoardGeometry.forViewer(c, viewer)
-        val topLeft = Offset(v.col * unit, v.row * unit)
-        drawRect(fill, topLeft, Size(unit, unit))
-        drawRect(colors.grid, topLeft, Size(unit, unit), style = Stroke(unit * 0.03f))
-    }
-
-    // Yards: Red bottom-left and Yellow top-right (in Red's view); the other two corners are unused.
-    val yards = listOf(
-        Triple(0f, 9f, colors.red),
-        Triple(9f, 0f, colors.yellow),
-        Triple(0f, 0f, colors.neutral),
-        Triple(9f, 9f, colors.neutral),
-    )
-    for ((x, y, fill) in yards) {
-        val (tl, sz) = rect(x, y, 6f, 6f)
-        drawRoundRect(fill, tl, sz, CornerRadius(unit * 0.4f))
-        val (itl, isz) = rect(x + 1f, y + 1f, 4f, 4f)
-        drawRoundRect(colors.cell, itl, isz, CornerRadius(unit * 0.3f))
-    }
-    for (color in PlayerColor.entries) {
-        for (i in 0 until 4) {
-            val p = BoardGeometry.forViewer(BoardGeometry.yardSpot(color, i), viewer).toOffset() * unit
-            drawCircle(colors.of(color).copy(alpha = 0.35f), unit * 0.45f, p)
-        }
-    }
-
-    // Shared track, start squares and safe squares.
-    BoardGeometry.track.forEachIndexed { index, c ->
-        val fill = when (index) {
-            PlayerColor.RED.startIndex -> colors.red
-            PlayerColor.YELLOW.startIndex -> colors.yellow
-            else -> colors.cell
-        }
-        cell(c, fill)
-        if (index in SAFE_SQUARES) {
-            val center = BoardGeometry.forViewer(BoardGeometry.center(c), viewer).toOffset() * unit
-            drawStar(center, unit * 0.32f, colors.star.copy(alpha = if (fill == colors.cell) 1f else 0.6f))
-        }
-    }
-    // Home columns, and the two unused ones (middle of the left and right arms) in grey.
-    for (color in PlayerColor.entries) {
-        for (p in 51..55) cell(BoardGeometry.homeColumnCell(color, p), colors.of(color))
-    }
-    for (c in (1..5) + (9..13)) cell(Cell(c, 7), colors.neutral)
-
-    // Center: four triangles pointing inward. Red's comes from Red's side, Yellow's from Yellow's.
-    val mid = BoardGeometry.forViewer(GridPoint(7.5f, 7.5f), viewer).toOffset() * unit
-    fun triangle(a: GridPoint, b: GridPoint, fill: Color) {
-        val pa = BoardGeometry.forViewer(a, viewer).toOffset() * unit
-        val pb = BoardGeometry.forViewer(b, viewer).toOffset() * unit
-        drawPath(Path().apply { moveTo(pa.x, pa.y); lineTo(pb.x, pb.y); lineTo(mid.x, mid.y); close() }, fill)
-    }
-    triangle(GridPoint(6f, 9f), GridPoint(9f, 9f), colors.red)
-    triangle(GridPoint(6f, 6f), GridPoint(9f, 6f), colors.yellow)
-    triangle(GridPoint(6f, 6f), GridPoint(6f, 9f), colors.neutral)
-    triangle(GridPoint(9f, 6f), GridPoint(9f, 9f), colors.neutral)
-}
-
-private fun DrawScope.drawStar(center: Offset, radius: Float, color: Color) {
-    val path = Path()
-    for (i in 0 until 10) {
-        val r = if (i % 2 == 0) radius else radius * 0.45f
-        val angle = -PI / 2 + i * PI / 5
-        val x = center.x + (r * cos(angle)).toFloat()
-        val y = center.y + (r * sin(angle)).toFloat()
-        if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
-    }
-    path.close()
-    drawPath(path, color)
 }
 
 /** A token: colored disc with a dark rim and a letter (R or Y) so colors never need to be told apart. */

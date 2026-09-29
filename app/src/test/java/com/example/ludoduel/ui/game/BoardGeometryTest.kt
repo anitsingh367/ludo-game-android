@@ -3,6 +3,7 @@ package com.example.ludoduel.ui.game
 import com.example.ludoduel.engine.GameState
 import com.example.ludoduel.engine.PlayerColor
 import com.example.ludoduel.engine.SAFE_SQUARES
+import com.example.ludoduel.ui.theme.Seat
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -83,5 +84,33 @@ class BoardGeometryTest {
         assertEquals(4, path.size)
         assertEquals(BoardGeometry.center(BoardGeometry.track[7]), path.last())
         assertEquals(1, BoardGeometry.path(PlayerColor.RED, 0, -1, 0).size)
+    }
+
+    @Test fun `every seat's start square is next to its yard and matches the engine for red and yellow`() {
+        assertEquals(PlayerColor.RED.startIndex, BoardGeometry.startIndex(Seat.RED))
+        assertEquals(PlayerColor.YELLOW.startIndex, BoardGeometry.startIndex(Seat.YELLOW))
+        for (seat in Seat.entries) {
+            val start = BoardGeometry.track[BoardGeometry.startIndex(seat)]
+            val yard = BoardGeometry.yardOrigin(seat)
+            // The start square touches the 6x6 yard (distance 1 from its box on one axis).
+            val dx = maxOf(yard.col - start.col, start.col - (yard.col + 5), 0)
+            val dy = maxOf(yard.row - start.row, start.row - (yard.row + 5), 0)
+            assertEquals("$seat start $start yard $yard", 1, dx + dy)
+        }
+    }
+
+    @Test fun `every home column starts next to the seat's last track square`() {
+        for (seat in Seat.entries) {
+            val last = BoardGeometry.track[(BoardGeometry.startIndex(seat) + 50) % 52]
+            val first = BoardGeometry.homeColumn(seat).first()
+            assertTrue("$seat", abs(last.col - first.col) + abs(last.row - first.row) == 1)
+            assertTrue(BoardGeometry.homeColumn(seat).none { it in BoardGeometry.track })
+        }
+        val all = Seat.entries.flatMap { BoardGeometry.homeColumn(it) }
+        assertEquals(20, all.toSet().size)
+    }
+
+    @Test fun `stars are the four safe squares that are not start squares`() {
+        assertEquals(listOf(8, 21, 34, 47), BoardGeometry.starSquares)
     }
 }

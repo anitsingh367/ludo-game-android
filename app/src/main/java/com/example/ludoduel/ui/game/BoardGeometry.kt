@@ -5,8 +5,11 @@ import com.example.ludoduel.engine.HOME
 import com.example.ludoduel.engine.LAST_TRACK
 import com.example.ludoduel.engine.LudoEngine
 import com.example.ludoduel.engine.PlayerColor
+import com.example.ludoduel.engine.SAFE_SQUARES
 import com.example.ludoduel.engine.TOKENS_PER_PLAYER
 import com.example.ludoduel.engine.YARD
+import com.example.ludoduel.ui.theme.Seat
+import com.example.ludoduel.ui.theme.seat
 
 data class Cell(val col: Int, val row: Int)
 
@@ -43,11 +46,43 @@ object BoardGeometry {
         add(Cell(6, 14))                             // 51
     }
 
-    /** Home column square for progress 51..55. */
-    fun homeColumnCell(color: PlayerColor, progress: Int): Cell {
-        val step = progress - (LAST_TRACK + 1)
-        return if (color == PlayerColor.RED) Cell(7, 13 - step) else Cell(7, 1 + step)
+    /** Top-left cell of each 6x6 yard, in Red's view. Clockwise order: Red, Green, Yellow, Blue. */
+    fun yardOrigin(seat: Seat): Cell = when (seat) {
+        Seat.RED -> Cell(0, 9)
+        Seat.GREEN -> Cell(0, 0)
+        Seat.YELLOW -> Cell(9, 0)
+        Seat.BLUE -> Cell(9, 9)
     }
+
+    /** Absolute track index of each seat's start square. */
+    fun startIndex(seat: Seat): Int = seat.ordinal * 13
+
+    /** The five home-column squares of a seat, from the entry to the center. */
+    fun homeColumn(seat: Seat): List<Cell> = (0 until 5).map { i ->
+        when (seat) {
+            Seat.RED -> Cell(7, 13 - i)
+            Seat.GREEN -> Cell(1 + i, 7)
+            Seat.YELLOW -> Cell(7, 1 + i)
+            Seat.BLUE -> Cell(13 - i, 7)
+        }
+    }
+
+    /** Safe squares that are not start squares (they get a star; start squares get an arrow). */
+    val starSquares: List<Int> = SAFE_SQUARES.filter { it % 13 != 0 }.sorted()
+
+    /**
+     * The corner points of each seat's center triangle (two outer corners on the center square's
+     * edge next to its home column), in Red's view. The third point is the board center.
+     */
+    fun centerTriangle(seat: Seat): Pair<GridPoint, GridPoint> = when (seat) {
+        Seat.RED -> GridPoint(6f, 9f) to GridPoint(9f, 9f)
+        Seat.GREEN -> GridPoint(6f, 6f) to GridPoint(6f, 9f)
+        Seat.YELLOW -> GridPoint(6f, 6f) to GridPoint(9f, 6f)
+        Seat.BLUE -> GridPoint(9f, 6f) to GridPoint(9f, 9f)
+    }
+
+    /** Home column square for progress 51..55. */
+    fun homeColumnCell(color: PlayerColor, progress: Int): Cell = homeColumn(color.seat())[progress - (LAST_TRACK + 1)]
 
     fun cellOf(color: PlayerColor, progress: Int): Cell? = when (progress) {
         in 0..LAST_TRACK -> track[LudoEngine.absoluteSquare(color, progress)]
