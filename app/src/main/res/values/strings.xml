@@ -52,7 +52,7 @@
     <string name="game_unmute">Turn on sound and vibration</string>
     <string name="game_reconnecting">Reconnecting… Moves are paused.</string>
     <string name="game_opponent_offline">Opponent disconnected — waiting (%1$s)</string>
-    <string name="game_you">%1$s (you)</string>
+    <string name="game_you_label">You</string>
     <string name="game_red">Red</string>
     <string name="game_yellow">Yellow</string>
     <string name="game_your_turn_roll">Your turn — tap the dice</string>
