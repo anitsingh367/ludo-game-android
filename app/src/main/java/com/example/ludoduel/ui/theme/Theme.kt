@@ -78,7 +78,7 @@ private val LightPalette = LudoPalette(
     track = Color.White, trackLine = Color(0xFFD5D8DC),
     frameLight = Color(0xFFF3C969), frameDark = Color(0xFFA86B22), gold = Color(0xFFFFC107),
     backgroundTop = Color(0xFF3F51B5), backgroundBottom = Color(0xFF7B1FA2),
-    amber = Color(0xFFFFB300),
+    amber = Color(0xFFEF7C00),
 )
 
 /** Dark mode keeps the bright board and uses a deeper background. */

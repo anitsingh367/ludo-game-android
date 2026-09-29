@@ -46,6 +46,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawWithContent
+import com.example.ludoduel.ui.components.Pill
 import com.example.ludoduel.ui.components.PillHost
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalDensity
@@ -188,17 +190,22 @@ private fun GameContent(
     Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize().safeDrawingPadding()) {
             TopBar(code, muted, onRules, onToggleMute)
-            if (!ui.connected) {
-                Banner(stringResource(R.string.game_reconnecting))
-            } else if (!ui.opponentConnected && !over && !ui.opponentLeft) {
-                OpponentOfflineBanner(ui.opponentLastSeen, now)
-            }
             // Board and both panels share the height; spare space is spread evenly so there are no big gaps.
             Column(Modifier.weight(1f).fillMaxWidth(), verticalArrangement = Arrangement.SpaceEvenly) {
                 for (color in listOf(ui.me.opponent, ui.me)) {
                     val isMe = color == ui.me
                     if (isMe) {
-                        Box(Modifier.fillMaxWidth().padding(horizontal = 12.dp), contentAlignment = Alignment.Center) {
+                        Box(
+                            Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 12.dp)
+                                // Slightly dimmed while we are offline (input is blocked then).
+                                .drawWithContent {
+                                    drawContent()
+                                    if (!ui.connected) drawRect(Color.Black.copy(alpha = 0.3f))
+                                },
+                            contentAlignment = Alignment.Center,
+                        ) {
                             val colorName = stringResource(if (ui.me == PlayerColor.RED) R.string.game_red else R.string.game_yellow)
                             LudoBoard(
                                 animator = animator,
@@ -252,7 +259,11 @@ private fun GameContent(
                 }
             }
         }
-        PillHost(animator.pills, persistent = null, Modifier.align(Alignment.TopCenter).safeDrawingPadding().padding(top = 60.dp))
+        PillHost(
+            animator.pills,
+            persistent = connectionPill(ui, over, now),
+            modifier = Modifier.align(Alignment.TopCenter).safeDrawingPadding().padding(top = 60.dp),
+        )
     }
 }
 
@@ -304,31 +315,23 @@ private fun TopBar(code: String, muted: Boolean, onRules: () -> Unit, onToggleMu
     }
 }
 
+/**
+ * The compact pill that stays up while a connection is down: mine ("Reconnecting…") or the
+ * opponent's, with the time since they dropped.
+ */
 @Composable
-private fun Banner(text: String) {
-    Text(
-        text,
-        color = MaterialTheme.colorScheme.onErrorContainer,
-        textAlign = TextAlign.Center,
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 4.dp)
-            .background(MaterialTheme.colorScheme.errorContainer, RoundedCornerShape(8.dp))
-            .padding(8.dp),
-    )
-}
-
-@Composable
-private fun OpponentOfflineBanner(lastSeen: Long, now: () -> Long) {
-    val elapsed by produceState(0L, lastSeen) {
+private fun connectionPill(ui: GameUi, over: Boolean, now: () -> Long): Pill? {
+    val amber = LocalLudoPalette.current.amber
+    if (!ui.connected) return Pill(stringResource(R.string.game_reconnecting), amber, spinner = true)
+    if (ui.opponentConnected || over || ui.opponentLeft) return null
+    val elapsed by produceState(0L, ui.opponentLastSeen) {
         while (true) {
-            value = (now() - lastSeen).coerceAtLeast(0)
+            value = (now() - ui.opponentLastSeen).coerceAtLeast(0)
             delay(1_000)
         }
     }
     val seconds = elapsed / 1000
-    val mmss = "%02d:%02d".format(seconds / 60, seconds % 60)
-    Banner(stringResource(R.string.game_opponent_offline, mmss))
+    return Pill(stringResource(R.string.game_opponent_offline, "%d:%02d".format(seconds / 60, seconds % 60)), amber, spinner = true)
 }
 
 @Composable
