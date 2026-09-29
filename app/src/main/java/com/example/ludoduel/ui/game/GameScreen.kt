@@ -93,6 +93,9 @@ import com.example.ludoduel.ui.rememberUiPrefs
 import com.example.ludoduel.ui.theme.LocalLudoPalette
 import kotlinx.coroutines.delay
 
+/** Space between the board and each player panel. */
+private val PANEL_GAP = 10.dp
+
 @Composable
 fun GameScreen(onExit: () -> Unit) {
     val vm = containerViewModel { c, saved -> GameViewModel(c, saved) }
@@ -208,73 +211,76 @@ private fun GameContent(
     Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize().safeDrawingPadding()) {
             TopBar(code, muted, onRules, onToggleMute, onSettings)
-            // Board and both panels share the height; spare space is spread evenly so there are no big gaps.
-            Column(Modifier.weight(1f).fillMaxWidth(), verticalArrangement = Arrangement.SpaceEvenly) {
-                for (color in listOf(ui.me.opponent, ui.me)) {
-                    val isMe = color == ui.me
-                    if (isMe) {
-                        Box(
-                            Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 12.dp)
-                                // Slightly dimmed while we are offline (input is blocked then).
-                                .drawWithContent {
-                                    drawContent()
-                                    if (!ui.connected) drawRect(Color.Black.copy(alpha = 0.3f))
+            val panel = @Composable { color: PlayerColor, modifier: Modifier ->
+                val isMe = color == ui.me
+                val active = !over && s.turn == color
+                PlayerPanel(
+                    name = if (isMe) ui.myName else ui.opponentName,
+                    subtitle = stringResource(
+                        when {
+                            isMe -> R.string.game_you_label
+                            color == PlayerColor.RED -> R.string.game_red
+                            else -> R.string.game_yellow
+                        },
+                    ),
+                    color = color,
+                    active = active,
+                    deadline = shown.turnDeadline,
+                    now = now,
+                    mirrored = !isMe,
+                    modifier = modifier,
+                ) {
+                    DiceBox(active = active) {
+                        if (animator.dieOwner == color) {
+                            val die = animator.dice.getValue(color)
+                            val enabled = isMe && canRoll
+                            Die(
+                                visual = die,
+                                color = color,
+                                enabled = enabled,
+                                description = die.face?.takeIf { !enabled }
+                                    ?.let { stringResource(R.string.game_dice_description, it) }
+                                    ?: stringResource(R.string.game_roll),
+                                onRoll = {
+                                    animator.startLocalRoll()
+                                    onRoll()
                                 },
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            val colorName = stringResource(if (ui.me == PlayerColor.RED) R.string.game_red else R.string.game_yellow)
-                            LudoBoard(
-                                animator = animator,
-                                movable = movable,
-                                colorblind = prefs.colorblind,
-                                onTokenTap = onTokenTap,
-                                description = stringResource(R.string.board_description, colorName),
-                                modifier = Modifier.fillMaxWidth(),
+                                modifier = Modifier.fillMaxSize(),
                             )
-                        }
-                    }
-                    val active = !over && s.turn == color
-                    PlayerPanel(
-                        name = if (isMe) ui.myName else ui.opponentName,
-                        subtitle = stringResource(
-                            when {
-                                isMe -> R.string.game_you_label
-                                color == PlayerColor.RED -> R.string.game_red
-                                else -> R.string.game_yellow
-                            },
-                        ),
-                        color = color,
-                        active = active,
-                        deadline = shown.turnDeadline,
-                        now = now,
-                        mirrored = !isMe,
-                        modifier = Modifier.align(if (isMe) Alignment.Start else Alignment.End).padding(horizontal = 16.dp),
-                    ) {
-                        DiceBox(active = active) {
-                            if (animator.dieOwner == color) {
-                                val die = animator.dice.getValue(color)
-                                val enabled = isMe && canRoll
-                                Die(
-                                    visual = die,
-                                    color = color,
-                                    enabled = enabled,
-                                    description = die.face?.takeIf { !enabled }
-                                        ?.let { stringResource(R.string.game_dice_description, it) }
-                                        ?: stringResource(R.string.game_roll),
-                                    onRoll = {
-                                        animator.startLocalRoll()
-                                        onRoll()
-                                    },
-                                    modifier = Modifier.fillMaxSize(),
-                                )
-                                DieFloater(die)
-                            }
+                            DieFloater(die)
                         }
                     }
                 }
             }
+            // Spare height goes above the top panel and below the bottom panel, never between a panel
+            // and the board. Each panel sits next to its own corner of the board.
+            Spacer(Modifier.weight(1f))
+            panel(ui.me.opponent, Modifier.align(Alignment.End).padding(horizontal = 8.dp))
+            Spacer(Modifier.height(PANEL_GAP))
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 8.dp)
+                    // Slightly dimmed while we are offline (input is blocked then).
+                    .drawWithContent {
+                        drawContent()
+                        if (!ui.connected) drawRect(Color.Black.copy(alpha = 0.3f))
+                    },
+                contentAlignment = Alignment.Center,
+            ) {
+                val colorName = stringResource(if (ui.me == PlayerColor.RED) R.string.game_red else R.string.game_yellow)
+                LudoBoard(
+                    animator = animator,
+                    movable = movable,
+                    colorblind = prefs.colorblind,
+                    onTokenTap = onTokenTap,
+                    description = stringResource(R.string.board_description, colorName),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+            Spacer(Modifier.height(PANEL_GAP))
+            panel(ui.me, Modifier.align(Alignment.Start).padding(horizontal = 8.dp))
+            Spacer(Modifier.weight(1f))
         }
         if (over) WinOverlay(ui, shown, animator.fx, onRematch, onHome)
         PillHost(

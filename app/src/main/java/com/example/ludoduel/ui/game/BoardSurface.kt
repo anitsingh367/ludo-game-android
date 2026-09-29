@@ -35,28 +35,26 @@ import com.example.ludoduel.ui.theme.Seat
 import com.example.ludoduel.ui.theme.starPath
 
 /**
- * The board as a physical object: a thick gold/wood frame with a drop shadow. [content] is laid
- * out on the 15x15 playing area inside the frame (the static board is drawn behind it).
+ * The board with a thin dark-brown border and a soft shadow. [content] is laid out on the 15x15
+ * playing area inside the border (the static board is drawn behind it).
  */
 @Composable
 fun BoardFrame(viewer: PlayerColor, modifier: Modifier = Modifier, content: @Composable BoxScope.() -> Unit) {
-    val palette = LocalLudoPalette.current
-    val frameShape = RoundedCornerShape(18.dp)
+    val shape = RoundedCornerShape(6.dp)
     Box(
         modifier
             .aspectRatio(1f)
-            .shadow(14.dp, frameShape)
-            .background(
-                Brush.linearGradient(listOf(palette.frameLight, palette.frameDark, palette.frameLight)),
-                frameShape,
-            )
-            .padding(10.dp)
-            .clip(RoundedCornerShape(8.dp)),
+            .shadow(6.dp, shape)
+            .background(BORDER_COLOR, shape)
+            .padding(3.dp)
+            .clip(RoundedCornerShape(3.dp)),
     ) {
         BoardSurface(viewer, Modifier.fillMaxSize())
         content()
     }
 }
+
+private val BORDER_COLOR = Color(0xFF5A3E2B)
 
 /**
  * The static board, drawn once and cached until its size changes. It only recomposes when the
