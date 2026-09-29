@@ -26,6 +26,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
@@ -107,7 +108,7 @@ fun WaitingScreen(onGameStarted: (String) -> Unit, onClosed: () -> Unit) {
     val shareText = stringResource(R.string.share_message, vm.code)
     val chooserTitle = stringResource(R.string.share_chooser)
 
-    Surface(Modifier.fillMaxSize()) {
+    Surface(Modifier.fillMaxSize(), color = Color.Transparent, contentColor = Color.White) {
         Column(
             Modifier.safeDrawingPadding().padding(24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,

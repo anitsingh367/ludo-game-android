@@ -26,6 +26,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -133,7 +134,7 @@ fun HomeScreen(onRoomCreated: (String) -> Unit, onJoin: () -> Unit, onRejoin: (S
         }
     }
 
-    Surface(Modifier.fillMaxSize()) {
+    Surface(Modifier.fillMaxSize(), color = Color.Transparent, contentColor = Color.White) {
         Column(
             Modifier
                 .safeDrawingPadding()

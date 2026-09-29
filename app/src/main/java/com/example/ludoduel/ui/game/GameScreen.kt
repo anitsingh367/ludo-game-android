@@ -89,7 +89,7 @@ fun GameScreen(onExit: () -> Unit) {
     }
     BackHandler { if (running) confirmLeave = true else exit() }
 
-    Surface(Modifier.fillMaxSize()) {
+    Surface(Modifier.fillMaxSize(), color = Color.Transparent, contentColor = Color.White) {
         when (ui.status) {
             GameStatus.LOADING -> Column(
                 Modifier.fillMaxSize(),

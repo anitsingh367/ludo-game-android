@@ -16,6 +16,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -70,7 +71,7 @@ fun SplashScreen(onReady: () -> Unit) {
     val state by vm.state.collectAsStateWithLifecycle()
     LaunchedEffect(state) { if (state == SplashState.READY) onReady() }
 
-    Surface(Modifier.fillMaxSize()) {
+    Surface(Modifier.fillMaxSize(), color = Color.Transparent, contentColor = Color.White) {
         Column(
             Modifier.padding(32.dp),
             verticalArrangement = Arrangement.Center,
