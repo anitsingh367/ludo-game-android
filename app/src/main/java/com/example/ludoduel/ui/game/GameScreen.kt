@@ -69,6 +69,7 @@ import com.example.ludoduel.engine.YARD
 import com.example.ludoduel.ui.components.Glyph
 import com.example.ludoduel.ui.components.GlyphButton
 import com.example.ludoduel.ui.containerViewModel
+import com.example.ludoduel.ui.rememberUiPrefs
 import com.example.ludoduel.ui.theme.LocalBoardColors
 import kotlinx.coroutines.delay
 
@@ -158,6 +159,7 @@ private fun GameContent(
     val over = s.phase == Phase.OVER
     val myTurn = !over && s.turn == ui.me
     val opponentTurn = !over && s.turn == ui.me.opponent
+    val colorblind = rememberUiPrefs().colorblind
     Column(Modifier.fillMaxSize().safeDrawingPadding()) {
         TopBar(code, muted, onRules, onToggleMute)
         if (!ui.connected) {
@@ -187,6 +189,7 @@ private fun GameContent(
                     game = game,
                     me = ui.me,
                     movable = ui.movable,
+                    colorblind = colorblind,
                     onTokenTap = onTokenTap,
                     description = stringResource(R.string.board_description, colorName),
                     modifier = Modifier.fillMaxWidth(),

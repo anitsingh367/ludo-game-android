@@ -63,13 +63,17 @@ class BoardGeometryTest {
         assertEquals(Cell(6, 13), yellowStart)
     }
 
-    @Test fun `layout spreads tokens that share a square`() {
+    @Test fun `layout fans out tokens that share a square and keeps finished tokens together`() {
         val s = GameState.initial(PlayerColor.RED).copy(red = listOf(5, 5, -1, 56), yellow = listOf(56, 56, 56, -1))
         val spots = BoardGeometry.layout(s, PlayerColor.RED)
         assertEquals(8, spots.size)
-        assertEquals(8, spots.values.map { it.point }.toSet().size)
+        val stacked = listOf(spots.getValue(TokenKey(PlayerColor.RED, 0)), spots.getValue(TokenKey(PlayerColor.RED, 1)))
+        assertTrue(stacked[0].point != stacked[1].point)
+        assertTrue(stacked.all { it.scale == BoardGeometry.STACK_SCALE })
         assertEquals(1f, spots.getValue(TokenKey(PlayerColor.RED, 2)).scale)
-        assertTrue(spots.getValue(TokenKey(PlayerColor.RED, 0)).scale < 1f)
+        // Finished tokens share their color's finish spot.
+        val yellowDone = (0..2).map { spots.getValue(TokenKey(PlayerColor.YELLOW, it)).point }.toSet()
+        assertEquals(1, yellowDone.size)
     }
 
     @Test fun `layout handles eight tokens on one safe square`() {
