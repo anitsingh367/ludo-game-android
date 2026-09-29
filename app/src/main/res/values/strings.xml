@@ -61,6 +61,12 @@
     <string name="game_no_move">%1$s rolled %2$d — no move possible</string>
     <string name="game_three_sixes">%1$s rolled three 6s — turn lost</string>
     <string name="game_timeout">%1$s ran out of time</string>
+    <string name="fx_plus_one_turn">+1 turn!</string>
+    <string name="fx_no_moves">No moves</string>
+    <string name="fx_three_sixes">3 sixes — turn lost</string>
+    <string name="fx_captured">Captured! +1 turn</string>
+    <string name="fx_your_turn">Your turn!</string>
+    <string name="fx_players_turn">%1$s\'s turn</string>
     <string name="game_roll">Roll</string>
     <string name="game_dice_description">Dice showing %1$d</string>
     <string name="game_loading">Loading game…</string>

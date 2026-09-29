@@ -69,7 +69,7 @@ fun PlayerPanel(
     Row(
         modifier
             .graphicsLayer { scaleX = scale; scaleY = scale; this.alpha = alpha }
-            .shadow(if (active) 18.dp else 4.dp, shape, ambientColor = colors.main, spotColor = colors.main)
+            .shadow(if (active) 18.dp else 4.dp, shape, clip = false, ambientColor = colors.main, spotColor = colors.main)
             .background(Brush.linearGradient(listOf(colors.main, colors.dark)), shape)
             .border(2.dp, Color.White.copy(alpha = if (active) 0.7f else 0.25f), shape)
             .padding(horizontal = 12.dp, vertical = 10.dp),

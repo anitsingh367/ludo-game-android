@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -45,6 +46,9 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import com.example.ludoduel.ui.components.PillHost
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -70,7 +74,7 @@ import com.example.ludoduel.ui.components.Glyph
 import com.example.ludoduel.ui.components.GlyphButton
 import com.example.ludoduel.ui.containerViewModel
 import com.example.ludoduel.ui.rememberUiPrefs
-import com.example.ludoduel.ui.theme.LocalBoardColors
+import com.example.ludoduel.ui.theme.LocalLudoPalette
 import kotlinx.coroutines.delay
 
 @Composable
@@ -82,7 +86,6 @@ fun GameScreen(onExit: () -> Unit) {
     var showRules by rememberSaveable { mutableStateOf(false) }
 
     GameWindowEffects()
-    SoundEffects(ui.game, muted)
 
     val game = ui.game
     val running = ui.status == GameStatus.READY && game != null && game.state.phase != Phase.OVER && !ui.opponentLeft
@@ -155,84 +158,124 @@ private fun GameContent(
     onRematch: () -> Unit,
     onHome: () -> Unit,
 ) {
-    val s = game.state
+    val prefs = rememberUiPrefs()
+    val density = LocalDensity.current
+    val palette = LocalLudoPalette.current
+    val animator = remember(ui.me) { GameAnimator(ui.me, game, density, palette) }
+    animator.fx = rememberGameFx(soundOn = !muted, vibrationOn = prefs.vibration)
+    animator.texts = AnimatorTexts(
+        plusOneTurn = stringResource(R.string.fx_plus_one_turn),
+        noMoves = stringResource(R.string.fx_no_moves),
+        threeSixes = stringResource(R.string.fx_three_sixes),
+        captured = stringResource(R.string.fx_captured),
+        yourTurn = stringResource(R.string.fx_your_turn),
+        playersTurn = stringResource(R.string.fx_players_turn),
+        ranOutOfTime = stringResource(R.string.game_timeout),
+    )
+    animator.nameOf = { if (it == ui.me) ui.myName else ui.opponentName }
+    LaunchedEffect(animator) { animator.run() }
+    LaunchedEffect(animator, game) { animator.submit(game) }
+
+    // What the screen shows is the animator's state, which may lag the server by an animation.
+    val shown = animator.shown
+    val s = shown.state
     val over = s.phase == Phase.OVER
-    val myTurn = !over && s.turn == ui.me
-    val opponentTurn = !over && s.turn == ui.me.opponent
-    val colorblind = rememberUiPrefs().colorblind
-    Column(Modifier.fillMaxSize().safeDrawingPadding()) {
-        TopBar(code, muted, onRules, onToggleMute)
-        if (!ui.connected) {
-            Banner(stringResource(R.string.game_reconnecting))
-        } else if (!ui.opponentConnected && !over && !ui.opponentLeft) {
-            OpponentOfflineBanner(ui.opponentLastSeen, now)
-        }
-        // Board and both panels share the height; spare space is spread evenly so there are no big gaps.
-        Column(Modifier.weight(1f).fillMaxWidth(), verticalArrangement = Arrangement.SpaceEvenly) {
-            PlayerPanel(
-                name = ui.opponentName,
-                subtitle = stringResource(if (ui.me.opponent == PlayerColor.RED) R.string.game_red else R.string.game_yellow),
-                color = ui.me.opponent,
-                active = opponentTurn,
-                deadline = game.turnDeadline,
-                now = now,
-                mirrored = true,
-                modifier = Modifier.align(Alignment.End).padding(horizontal = 16.dp),
-            ) {
-                DiceBox(active = opponentTurn) {
-                    if (opponentTurn) OldDice(ui, game, ui.me.opponent, onRoll)
+    // Input only when every animation has played and the board shows the latest state.
+    val caughtUp = !animator.busy && shown == game
+    val movable = if (caughtUp) ui.movable else emptyList()
+    val canRoll = caughtUp && ui.canRoll
+
+    Box(Modifier.fillMaxSize()) {
+        Column(Modifier.fillMaxSize().safeDrawingPadding()) {
+            TopBar(code, muted, onRules, onToggleMute)
+            if (!ui.connected) {
+                Banner(stringResource(R.string.game_reconnecting))
+            } else if (!ui.opponentConnected && !over && !ui.opponentLeft) {
+                OpponentOfflineBanner(ui.opponentLastSeen, now)
+            }
+            // Board and both panels share the height; spare space is spread evenly so there are no big gaps.
+            Column(Modifier.weight(1f).fillMaxWidth(), verticalArrangement = Arrangement.SpaceEvenly) {
+                for (color in listOf(ui.me.opponent, ui.me)) {
+                    val isMe = color == ui.me
+                    if (isMe) {
+                        Box(Modifier.fillMaxWidth().padding(horizontal = 12.dp), contentAlignment = Alignment.Center) {
+                            val colorName = stringResource(if (ui.me == PlayerColor.RED) R.string.game_red else R.string.game_yellow)
+                            LudoBoard(
+                                animator = animator,
+                                movable = movable,
+                                colorblind = prefs.colorblind,
+                                onTokenTap = onTokenTap,
+                                description = stringResource(R.string.board_description, colorName),
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                            if (over) GameOverCard(ui, shown, onRematch, onHome)
+                        }
+                    }
+                    val active = !over && s.turn == color
+                    PlayerPanel(
+                        name = if (isMe) ui.myName else ui.opponentName,
+                        subtitle = stringResource(
+                            when {
+                                isMe -> R.string.game_you_label
+                                color == PlayerColor.RED -> R.string.game_red
+                                else -> R.string.game_yellow
+                            },
+                        ),
+                        color = color,
+                        active = active,
+                        deadline = shown.turnDeadline,
+                        now = now,
+                        mirrored = !isMe,
+                        modifier = Modifier.align(if (isMe) Alignment.Start else Alignment.End).padding(horizontal = 16.dp),
+                    ) {
+                        DiceBox(active = active) {
+                            if (animator.dieOwner == color) {
+                                val die = animator.dice.getValue(color)
+                                val enabled = isMe && canRoll
+                                Die(
+                                    visual = die,
+                                    color = color,
+                                    enabled = enabled,
+                                    description = die.face?.takeIf { !enabled }
+                                        ?.let { stringResource(R.string.game_dice_description, it) }
+                                        ?: stringResource(R.string.game_roll),
+                                    onRoll = {
+                                        animator.startLocalRoll()
+                                        onRoll()
+                                    },
+                                    modifier = Modifier.fillMaxSize(),
+                                )
+                                DieFloater(die)
+                            }
+                        }
+                    }
                 }
             }
-            Box(Modifier.fillMaxWidth().padding(horizontal = 12.dp), contentAlignment = Alignment.Center) {
-                val colorName = stringResource(if (ui.me == PlayerColor.RED) R.string.game_red else R.string.game_yellow)
-                LudoBoard(
-                    game = game,
-                    me = ui.me,
-                    movable = ui.movable,
-                    colorblind = colorblind,
-                    onTokenTap = onTokenTap,
-                    description = stringResource(R.string.board_description, colorName),
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                if (over) GameOverCard(ui, game, onRematch, onHome)
-            }
-            PlayerPanel(
-                name = ui.myName,
-                subtitle = stringResource(R.string.game_you_label),
-                color = ui.me,
-                active = myTurn,
-                deadline = game.turnDeadline,
-                now = now,
-                mirrored = false,
-                modifier = Modifier.align(Alignment.Start).padding(horizontal = 16.dp),
-            ) {
-                DiceBox(active = myTurn) {
-                    if (myTurn) OldDice(ui, game, ui.me, onRoll)
-                }
-            }
-            Text(
-                statusText(ui, game),
-                style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier.align(Alignment.CenterHorizontally),
-            )
         }
+        PillHost(animator.pills, persistent = null, Modifier.align(Alignment.TopCenter).safeDrawingPadding().padding(top = 60.dp))
     }
 }
 
-/** TEMPORARY (redesign in progress): the old die inside the dice box, replaced by the 3D die. */
+/** "+1 turn!" rising from the die and fading. */
 @Composable
-private fun OldDice(ui: GameUi, game: RoomGame, owner: PlayerColor, onRoll: () -> Unit) {
-    val s = game.state
-    val shown = s.dice
-    DiceButton(
-        value = shown,
-        rolling = ui.rolling,
-        enabled = ui.canRoll && owner == ui.me,
-        pipColor = LocalBoardColors.current.of(owner),
-        description = if (ui.canRoll || shown == null) stringResource(R.string.game_roll)
-        else stringResource(R.string.game_dice_description, shown),
-        onRoll = onRoll,
-        modifier = Modifier.size(52.dp),
+private fun DieFloater(die: DieVisual) {
+    val progress = die.floater.value
+    if (progress >= 1f) return
+    Text(
+        die.floaterText,
+        color = Color(0xFF3E2723),
+        fontWeight = FontWeight.ExtraBold,
+        fontSize = 14.sp,
+        maxLines = 1,
+        softWrap = false,
+        modifier = Modifier
+            .wrapContentWidth(unbounded = true)
+            .graphicsLayer {
+                translationY = -(20.dp.toPx() + 46.dp.toPx() * progress)
+                alpha = if (progress < 0.7f) 1f else (1f - progress) / 0.3f
+            }
+            .background(Color(0xFFFFD54F), RoundedCornerShape(50))
+            .padding(horizontal = 10.dp, vertical = 2.dp),
     )
 }
 
@@ -258,25 +301,6 @@ private fun TopBar(code: String, muted: Boolean, onRules: () -> Unit, onToggleMu
             stringResource(if (muted) R.string.game_unmute else R.string.game_mute),
             onToggleMute,
         )
-    }
-}
-
-@Composable
-private fun statusText(ui: GameUi, game: RoomGame): String {
-    val s = game.state
-    fun nameOf(color: PlayerColor) = if (color == ui.me) ui.myName else ui.opponentName
-    ui.notice?.let { n ->
-        return when (n.kind) {
-            NoticeKind.NO_MOVE -> stringResource(R.string.game_no_move, nameOf(n.by), checkNotNull(n.dice))
-            NoticeKind.THREE_SIXES -> stringResource(R.string.game_three_sixes, nameOf(n.by))
-            NoticeKind.TIMEOUT -> stringResource(R.string.game_timeout, nameOf(n.by))
-        }
-    }
-    return when {
-        s.phase == Phase.OVER -> ""
-        s.turn != ui.me -> stringResource(R.string.game_opponent_turn, ui.opponentName)
-        s.phase == Phase.ROLL -> stringResource(R.string.game_your_turn_roll)
-        else -> stringResource(R.string.game_your_turn_move, checkNotNull(s.dice))
     }
 }
 
@@ -394,34 +418,6 @@ private fun GameWindowEffects() {
         onDispose {
             activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
             view.keepScreenOn = false
-        }
-    }
-}
-
-/** Plays a sound and vibrates for rolls, captures and tokens reaching home (only for the next version, never replays). */
-@Composable
-private fun SoundEffects(game: RoomGame?, muted: Boolean) {
-    val feedback = rememberFeedback()
-    val previous = remember { arrayOfNulls<RoomGame>(1) }
-    val currentMuted by rememberUpdatedState(muted)
-    LaunchedEffect(game) {
-        val prev = previous[0]
-        previous[0] = game
-        if (game == null || prev == null || currentMuted || game.version != prev.version + 1) return@LaunchedEffect
-        val last = game.state.lastAction ?: return@LaunchedEffect
-        when (last.type) {
-            ActionType.ROLL -> feedback.roll()
-            ActionType.MOVE -> {
-                val from = checkNotNull(last.from)
-                val to = checkNotNull(last.to)
-                val special = last.captured != null || to == HOME
-                if (special) {
-                    // Wait for the step-by-step animation to reach the square.
-                    delay(120L * (if (from == YARD) 1 else to - from))
-                    if (last.captured != null) feedback.capture() else feedback.home()
-                }
-            }
-            ActionType.TIMEOUT, ActionType.LEFT -> Unit
         }
     }
 }
