@@ -21,7 +21,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontVariation
@@ -115,24 +115,6 @@ private val BalooTypography: Typography = Typography().run {
     )
 }
 
-/** TEMPORARY (redesign in progress): colors for the old board drawing, removed once it is redrawn. */
-@Immutable
-data class BoardColors(
-    val red: Color, val redDark: Color, val yellow: Color, val yellowDark: Color, val neutral: Color,
-    val cell: Color, val grid: Color, val board: Color, val star: Color, val glow: Color,
-) {
-    fun of(color: PlayerColor) = if (color == PlayerColor.RED) red else yellow
-    fun darkOf(color: PlayerColor) = if (color == PlayerColor.RED) redDark else yellowDark
-}
-
-val LocalBoardColors = staticCompositionLocalOf {
-    BoardColors(
-        red = Red.main, redDark = Red.dark, yellow = Yellow.main, yellowDark = Yellow.dark,
-        neutral = Color(0xFFCFD2D6), cell = Color.White, grid = Color(0xFF9EA3A8),
-        board = Color(0xFFF1EFEA), star = Color(0xFF7A7F85), glow = Color.White,
-    )
-}
-
 @Composable
 fun LudoTheme(content: @Composable () -> Unit) {
     val dark = isSystemInDarkTheme()
@@ -150,57 +132,71 @@ fun LudoTheme(content: @Composable () -> Unit) {
 /**
  * The game background: a vertical royal-blue to purple gradient with a faint (6%) pattern of dice,
  * stars and diamonds. Content on top is white by default.
+ *
+ * The background has its own graphics layer and its shapes are built once, so it is never redrawn
+ * when something on top of it animates.
  */
 @Composable
 fun LudoBackground(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
     val palette = LocalLudoPalette.current
-    Box(
-        modifier.drawWithCache {
-            val gradient = Brush.verticalGradient(listOf(palette.backgroundTop, palette.backgroundBottom))
-            val step = 64.dp.toPx()
-            onDrawBehind {
-                drawRect(gradient)
-                drawPattern(step, Color.White.copy(alpha = 0.06f))
-            }
-        },
-    ) {
+    Box(modifier) {
+        Box(
+            Modifier
+                .matchParentSize()
+                .graphicsLayer()
+                .drawWithCache {
+                    val gradient = Brush.verticalGradient(listOf(palette.backgroundTop, palette.backgroundBottom))
+                    val pattern = buildPattern(size, 64.dp.toPx())
+                    val color = Color.White.copy(alpha = 0.06f)
+                    onDrawBehind {
+                        drawRect(gradient)
+                        drawPath(pattern.filled, color)
+                        drawPath(pattern.outlined, color, style = Stroke(pattern.stroke))
+                    }
+                },
+        )
         CompositionLocalProvider(LocalContentColor provides Color.White) { content() }
     }
 }
 
-/** A staggered grid of small dice, stars and diamonds. */
-private fun DrawScope.drawPattern(step: Float, color: Color) {
+private class Pattern(val filled: Path, val outlined: Path, val stroke: Float)
+
+/** A staggered grid of small dice, stars and diamonds, built as two paths. */
+private fun buildPattern(size: Size, step: Float): Pattern {
+    val filled = Path()
+    val outlined = Path()
     val cols = (size.width / step).toInt() + 2
     val rows = (size.height / step).toInt() + 2
+    val half = step * 0.22f
     for (r in 0 until rows) {
         for (c in 0 until cols) {
-            val x = c * step + if (r % 2 == 0) 0f else step / 2
-            val y = r * step
-            val center = Offset(x, y)
+            val center = Offset(c * step + if (r % 2 == 0) 0f else step / 2, r * step)
             when ((r * 7 + c * 3) % 3) {
-                0 -> drawPatternDie(center, step * 0.22f, color)
-                1 -> drawPatternStar(center, step * 0.16f, color)
-                else -> drawPatternDiamond(center, step * 0.12f, color)
+                0 -> {
+                    // A die: rounded outline with three pips.
+                    outlined.addRoundRect(
+                        androidx.compose.ui.geometry.RoundRect(
+                            center.x - half, center.y - half, center.x + half, center.y + half,
+                            CornerRadius(half * 0.35f),
+                        ),
+                    )
+                    for (k in -1..1) {
+                        filled.addOval(androidx.compose.ui.geometry.Rect(center + Offset(k * half * 0.5f, k * half * 0.5f), half * 0.16f))
+                    }
+                }
+                1 -> filled.addPath(starPath(center, step * 0.16f))
+                else -> {
+                    val d = step * 0.12f
+                    filled.moveTo(center.x, center.y - d)
+                    filled.lineTo(center.x + d * 0.7f, center.y)
+                    filled.lineTo(center.x, center.y + d)
+                    filled.lineTo(center.x - d * 0.7f, center.y)
+                    filled.close()
+                }
             }
         }
     }
-}
-
-private fun DrawScope.drawPatternDie(center: Offset, half: Float, color: Color) {
-    rotate(15f, center) {
-        drawRoundRect(
-            color, center - Offset(half, half), Size(half * 2, half * 2), CornerRadius(half * 0.35f),
-            style = Stroke(half * 0.18f),
-        )
-        drawCircle(color, half * 0.16f, center)
-        drawCircle(color, half * 0.16f, center + Offset(-half * 0.5f, -half * 0.5f))
-        drawCircle(color, half * 0.16f, center + Offset(half * 0.5f, half * 0.5f))
-    }
-}
-
-fun DrawScope.drawPatternStar(center: Offset, radius: Float, color: Color, style: Stroke? = null) {
-    val path = starPath(center, radius)
-    if (style == null) drawPath(path, color) else drawPath(path, color, style = style)
+    return Pattern(filled, outlined, half * 0.18f)
 }
 
 /** A five-pointed star centered on [center]. */
@@ -215,15 +211,3 @@ fun starPath(center: Offset, radius: Float, innerRatio: Float = 0.45f): Path = P
     close()
 }
 
-private fun DrawScope.drawPatternDiamond(center: Offset, radius: Float, color: Color) {
-    drawPath(
-        Path().apply {
-            moveTo(center.x, center.y - radius)
-            lineTo(center.x + radius * 0.7f, center.y)
-            lineTo(center.x, center.y + radius)
-            lineTo(center.x - radius * 0.7f, center.y)
-            close()
-        },
-        color,
-    )
-}

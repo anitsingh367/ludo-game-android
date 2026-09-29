@@ -24,6 +24,7 @@ import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipPath
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.example.ludoduel.engine.PlayerColor
@@ -64,11 +65,14 @@ fun BoardFrame(viewer: PlayerColor, modifier: Modifier = Modifier, content: @Com
 @Composable
 fun BoardSurface(viewer: PlayerColor, modifier: Modifier = Modifier) {
     val palette = LocalLudoPalette.current
+    // Its own graphics layer: the board is recorded once and reused while tokens animate on top.
     Box(
-        modifier.drawWithCache {
-            val unit = size.width / BoardGeometry.SIZE
-            onDrawBehind { drawBoard(palette, viewer, unit) }
-        },
+        modifier
+            .graphicsLayer()
+            .drawWithCache {
+                val unit = size.width / BoardGeometry.SIZE
+                onDrawBehind { drawBoard(palette, viewer, unit) }
+            },
     )
 }
 

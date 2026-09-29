@@ -38,8 +38,6 @@ data class GameUi(
     val opponentConnected: Boolean = true,
     val opponentLastSeen: Long = 0L,
     val canRoll: Boolean = false,
-    /** My roll is being written: the dice animates until the server state arrives. */
-    val rolling: Boolean = false,
     /** Tokens I may tap right now. Empty whenever input is not allowed. */
     val movable: List<Int> = emptyList(),
     val opponentLeft: Boolean = false,
@@ -168,7 +166,6 @@ class GameViewModel(private val c: AppContainer, saved: SavedStateHandle) : View
             opponentConnected = opponent?.connected == true,
             opponentLastSeen = opponent?.lastSeen ?: 0L,
             canRoll = inputOpen && s.phase == Phase.ROLL,
-            rolling = busy && myTurn && s.phase == Phase.ROLL,
             movable = if (inputOpen && s.phase == Phase.MOVE) {
                 LudoEngine.legalMoves(s, me, checkNotNull(s.dice))
             } else {

@@ -32,7 +32,7 @@ import kotlinx.coroutines.launch
 fun SettingsSheet(onDismiss: () -> Unit) {
     val context = LocalContext.current
     val settings = (context.applicationContext as LudoApp).container.settings
-    val ui = UiSettings.get(context)
+    val ui = remember(context) { UiSettings(context) }
     val muted by remember(settings) { settings.muted }.collectAsState(initial = false)
     val prefs = rememberUiPrefs()
     val scope = rememberCoroutineScope()

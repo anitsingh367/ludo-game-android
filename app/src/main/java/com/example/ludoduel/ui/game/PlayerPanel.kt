@@ -37,6 +37,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.ludoduel.data.GameReducer
+import kotlinx.coroutines.delay
 import com.example.ludoduel.engine.PlayerColor
 import com.example.ludoduel.ui.theme.LocalLudoPalette
 import com.example.ludoduel.ui.theme.LudoBackground
@@ -132,8 +133,15 @@ private fun Avatar(name: String, color: PlayerColor, active: Boolean, deadline: 
  */
 @Composable
 fun TimerRing(deadline: Long, now: () -> Long, modifier: Modifier = Modifier) {
-    val frame by produceState(0L) { while (true) withFrameMillis { value = it } }
-    Canvas(modifier) {
+    // The ring shrinks only a few pixels per second, so about 15 redraws per second are smooth;
+    // the last 5 seconds pulse, so they redraw every frame.
+    val frame by produceState(0L, deadline) {
+        while (true) {
+            withFrameMillis { value = it }
+            if (deadline - now() > 5_000) delay(60)
+        }
+    }
+    Canvas(modifier.graphicsLayer()) {
         frame // Redraw every frame.
         val remaining = (deadline - now()).coerceAtLeast(0)
         val fraction = (remaining.toFloat() / GameReducer.TURN_MILLIS).coerceIn(0f, 1f)

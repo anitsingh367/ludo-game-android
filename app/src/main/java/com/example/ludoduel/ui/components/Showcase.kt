@@ -171,7 +171,7 @@ fun BouncingDice(modifier: Modifier = Modifier, size: Dp = 64.dp) {
             val phase = (t + i * 0.5f) % 1f
             val bounce = kotlin.math.abs(sin(phase * Math.PI)).toFloat()
             val face = faces[((t * 3 + i * 2).toInt()) % faces.size]
-            Canvas(Modifier.size(size, size * 1.6f)) {
+            Canvas(Modifier.size(size, size * 1.6f).graphicsLayer()) {
                 val dieSize = this.size.width
                 translate(top = (this.size.height - dieSize) * (1f - bounce)) {
                     rotate(if (i == 0) -20f * bounce else 18f * bounce, Offset(dieSize / 2, dieSize / 2)) {
@@ -213,7 +213,7 @@ fun ConfettiRain(modifier: Modifier = Modifier, count: Int = 70) {
         List(count) { Triple(r.nextFloat(), r.nextFloat(), r.nextFloat()) }
     }
     val colors = listOf(Color(0xFFFFD54F), Color(0xFF4FC3F7), Color(0xFFE57373), Color(0xFF81C784), Color(0xFFBA68C8), Color.White)
-    Canvas(modifier) {
+    Canvas(modifier.graphicsLayer()) {
         val seconds = time / 1000f
         pieces.forEachIndexed { i, (x0, speed, phase) ->
             val fall = ((seconds * (0.12f + speed * 0.18f) + phase) % 1f)
@@ -232,7 +232,7 @@ fun Trophy(modifier: Modifier = Modifier) {
     val gold = Brush.verticalGradient(listOf(Color(0xFFFFF176), Color(0xFFFFC107), Color(0xFFE65100)))
     val shine by rememberInfiniteTransition(label = "trophy")
         .animateFloat(0f, 1f, infiniteRepeatable(tween(1600), RepeatMode.Reverse), label = "shine")
-    Canvas(modifier) {
+    Canvas(modifier.graphicsLayer()) {
         val w = size.width
         val h = size.height
         // Crown.

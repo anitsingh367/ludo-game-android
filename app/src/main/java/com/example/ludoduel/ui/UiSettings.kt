@@ -18,29 +18,25 @@ private val Context.uiDataStore by preferencesDataStore(name = "ui_settings")
  * Display-only preferences (kept apart from the game's data layer): colorblind mode and vibration.
  * Sound on/off is the existing mute setting in [com.example.ludoduel.data.SettingsStore].
  */
-class UiSettings private constructor(private val context: Context) {
+class UiSettings(context: Context) {
+    // The DataStore delegate is one instance per process, so this class can be created freely.
+    private val store = context.uiDataStore
     private val colorblindKey = booleanPreferencesKey("colorblind")
     private val vibrationKey = booleanPreferencesKey("vibration")
 
-    val colorblind: Flow<Boolean> = context.uiDataStore.data.map { it[colorblindKey] ?: false }
-    val vibration: Flow<Boolean> = context.uiDataStore.data.map { it[vibrationKey] ?: true }
+    val colorblind: Flow<Boolean> = store.data.map { it[colorblindKey] ?: false }
+    val vibration: Flow<Boolean> = store.data.map { it[vibrationKey] ?: true }
 
-    suspend fun setColorblind(on: Boolean) = context.uiDataStore.edit { it[colorblindKey] = on }
-    suspend fun setVibration(on: Boolean) = context.uiDataStore.edit { it[vibrationKey] = on }
-
-    companion object {
-        @Volatile private var instance: UiSettings? = null
-
-        fun get(context: Context): UiSettings =
-            instance ?: synchronized(this) { instance ?: UiSettings(context.applicationContext).also { instance = it } }
-    }
+    suspend fun setColorblind(on: Boolean) = store.edit { it[colorblindKey] = on }
+    suspend fun setVibration(on: Boolean) = store.edit { it[vibrationKey] = on }
 }
 
 data class UiPrefs(val colorblind: Boolean, val vibration: Boolean)
 
 @Composable
 fun rememberUiPrefs(): UiPrefs {
-    val settings = UiSettings.get(LocalContext.current)
+    val context = LocalContext.current
+    val settings = remember(context) { UiSettings(context) }
     val colorblind by remember(settings) { settings.colorblind }.collectAsState(initial = false)
     val vibration by remember(settings) { settings.vibration }.collectAsState(initial = true)
     return UiPrefs(colorblind, vibration)

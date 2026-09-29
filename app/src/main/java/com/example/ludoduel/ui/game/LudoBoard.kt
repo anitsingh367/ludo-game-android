@@ -2,9 +2,8 @@ package com.example.ludoduel.ui.game
 
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -24,6 +23,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -33,6 +33,7 @@ import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.launch
 import com.example.ludoduel.engine.GameState
 import com.example.ludoduel.engine.HOME
 import com.example.ludoduel.engine.LAST_TRACK
@@ -58,10 +59,20 @@ fun LudoBoard(
     val me = animator.viewer
     val palette = LocalLudoPalette.current
     val textMeasurer = rememberTextMeasurer()
-    val loop = rememberInfiniteTransition(label = "tokens")
-    // Bobbing: up and down 4 dp over 600 ms. Pulse: the ring under movable tokens.
-    val bob by loop.animateFloat(0f, 1f, infiniteRepeatable(tween(300, easing = FastOutSlowInEasing), RepeatMode.Reverse), label = "bob")
-    val pulse by loop.animateFloat(0f, 1f, infiniteRepeatable(tween(800), RepeatMode.Restart), label = "pulse")
+    // Bobbing (up and down 4 dp over 600 ms) and the pulsing ring run only while a token can move,
+    // so the token layer is not redrawn every frame while the player waits.
+    val bobAnim = remember { Animatable(0f) }
+    val pulseAnim = remember { Animatable(0f) }
+    val anyMovable = movable.isNotEmpty()
+    LaunchedEffect(anyMovable) {
+        if (!anyMovable) {
+            bobAnim.snapTo(0f)
+            pulseAnim.snapTo(0f)
+            return@LaunchedEffect
+        }
+        launch { bobAnim.animateTo(1f, infiniteRepeatable(tween(300, easing = FastOutSlowInEasing), RepeatMode.Reverse)) }
+        pulseAnim.animateTo(1f, infiniteRepeatable(tween(800), RepeatMode.Restart))
+    }
 
     // Frame clock only while particle bursts are alive.
     var frameNanos by remember { mutableLongStateOf(0L) }
@@ -80,6 +91,7 @@ fun LudoBoard(
     BoardFrame(me, modifier) {
         Canvas(
             Modifier.fillMaxSize()
+                .graphicsLayer()
                 .semantics { contentDescription = description }
                 .pointerInput(me) {
                     detectTapGestures { tap ->
@@ -120,6 +132,7 @@ fun LudoBoard(
                         topLeft = center + Offset(-glowR, baseY - glowR * 0.42f),
                         size = Size(glowR * 2, glowR * 0.84f),
                     )
+                    val pulse = pulseAnim.value
                     val ringR = unit * (0.4f + 0.24f * pulse) * look.scale
                     drawOval(
                         Color.White.copy(alpha = 1f - pulse),
@@ -132,7 +145,7 @@ fun LudoBoard(
                     base = center,
                     unit = unit,
                     colors = palette.of(key.color),
-                    look = if (canMove) look.copy(liftPx = look.liftPx + 4.dp.toPx() * bob) else look,
+                    look = if (canMove) look.copy(liftPx = look.liftPx + 4.dp.toPx() * bobAnim.value) else look,
                     letter = if (colorblind) colorblindLetter(key.color) else null,
                     textMeasurer = textMeasurer,
                 )
