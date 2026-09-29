@@ -26,6 +26,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import com.example.ludoduel.AppContainer
 import com.example.ludoduel.R
+import com.example.ludoduel.ui.components.GameTitle
 import com.google.firebase.database.DatabaseException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -77,11 +78,7 @@ fun SplashScreen(onReady: () -> Unit) {
             verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Text(
-                stringResource(R.string.app_name),
-                style = MaterialTheme.typography.displaySmall,
-                fontWeight = FontWeight.Bold,
-            )
+            GameTitle(stringResource(R.string.app_name))
             Spacer(Modifier.height(24.dp))
             val message = when (state) {
                 SplashState.LOADING, SplashState.READY -> null

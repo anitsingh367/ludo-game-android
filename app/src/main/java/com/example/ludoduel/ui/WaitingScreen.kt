@@ -43,6 +43,11 @@ import com.example.ludoduel.AppContainer
 import com.example.ludoduel.R
 import com.example.ludoduel.data.RoomEvent
 import com.example.ludoduel.data.RoomStatus
+import com.example.ludoduel.ui.components.BlueGloss
+import com.example.ludoduel.ui.components.BouncingDice
+import com.example.ludoduel.ui.components.GlossyButton
+import com.example.ludoduel.ui.components.GreenGloss
+import com.example.ludoduel.ui.components.LetterTiles
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
@@ -108,47 +113,44 @@ fun WaitingScreen(onGameStarted: (String) -> Unit, onClosed: () -> Unit) {
     val shareText = stringResource(R.string.share_message, vm.code)
     val chooserTitle = stringResource(R.string.share_chooser)
 
-    Surface(Modifier.fillMaxSize(), color = Color.Transparent, contentColor = Color.White) {
-        Column(
-            Modifier.safeDrawingPadding().padding(24.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterVertically),
-        ) {
-            Text(stringResource(R.string.waiting_title), style = MaterialTheme.typography.titleLarge)
-            Text(
-                vm.code,
-                fontSize = 48.sp,
-                letterSpacing = 6.sp,
-                fontFamily = FontFamily.Monospace,
-                fontWeight = FontWeight.Bold,
+    Column(
+        Modifier.fillMaxSize().safeDrawingPadding().padding(24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(18.dp, Alignment.CenterVertically),
+    ) {
+        Text(stringResource(R.string.waiting_title), style = MaterialTheme.typography.headlineSmall, color = Color.White)
+        LetterTiles(vm.code)
+        Text(stringResource(R.string.waiting_hint), color = Color.White.copy(alpha = 0.9f))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            GlossyButton(
+                text = stringResource(R.string.copy),
+                onClick = {
+                    scope.launch { clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("Room code", vm.code))) }
+                    Toast.makeText(context, copiedText, Toast.LENGTH_SHORT).show()
+                },
+                colors = BlueGloss,
+                height = 52.dp,
+                modifier = Modifier.weight(1f),
             )
-            Text(stringResource(R.string.waiting_hint))
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                OutlinedButton(
-                    onClick = {
-                        scope.launch {
-                            clipboard.setClipEntry(ClipEntry(ClipData.newPlainText("Room code", vm.code)))
-                        }
-                        Toast.makeText(context, copiedText, Toast.LENGTH_SHORT).show()
-                    },
-                    modifier = Modifier.weight(1f),
-                ) { Text(stringResource(R.string.copy)) }
-                Button(
-                    onClick = {
-                        val send = Intent(Intent.ACTION_SEND).apply {
-                            type = "text/plain"
-                            putExtra(Intent.EXTRA_TEXT, shareText)
-                        }
-                        context.startActivity(Intent.createChooser(send, chooserTitle))
-                    },
-                    modifier = Modifier.weight(1f),
-                ) { Text(stringResource(R.string.share)) }
-            }
-            Spacer(Modifier.height(16.dp))
-            CircularProgressIndicator()
-            Text(stringResource(R.string.waiting_for_opponent))
-            Spacer(Modifier.height(16.dp))
-            TextButton(onClick = vm::cancel) { Text(stringResource(R.string.cancel)) }
+            GlossyButton(
+                text = stringResource(R.string.share),
+                onClick = {
+                    val send = Intent(Intent.ACTION_SEND).apply {
+                        type = "text/plain"
+                        putExtra(Intent.EXTRA_TEXT, shareText)
+                    }
+                    context.startActivity(Intent.createChooser(send, chooserTitle))
+                },
+                colors = GreenGloss,
+                height = 52.dp,
+                modifier = Modifier.weight(1f),
+            )
+        }
+        Spacer(Modifier.height(8.dp))
+        BouncingDice()
+        Text(stringResource(R.string.waiting_for_opponent), style = MaterialTheme.typography.titleLarge, color = Color.White)
+        TextButton(onClick = vm::cancel) {
+            Text(stringResource(R.string.cancel), color = Color.White.copy(alpha = 0.85f), style = MaterialTheme.typography.titleMedium)
         }
     }
 }

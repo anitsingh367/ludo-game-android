@@ -445,10 +445,4 @@ class GameAnimator(
     }
 }
 
-/** Used before the screen provides the real sound output. */
-private object SilentFx : GameFx {
-    override fun play(sfx: Sfx) = Unit
-    override fun buzz(kind: Buzz) = Unit
-}
-
 fun GridPoint.toOffset() = Offset(x, y)

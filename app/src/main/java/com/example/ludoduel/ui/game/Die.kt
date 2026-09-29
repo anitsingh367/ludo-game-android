@@ -23,6 +23,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -131,10 +132,13 @@ private fun DrawScope.drawGlow(glow: Float) {
     )
 }
 
-/** The die body and its pips. Also used by previews and the waiting-room animation. */
-fun DrawScope.drawDieBody(face: Int?, onePipColor: Color, redFlash: Float = 0f) {
-    val side = size.minDimension * 0.84f
-    val topLeft = center - Offset(side / 2, side / 2)
+/**
+ * The die body and its pips, filling the square [area] (the whole canvas by default). Also used by
+ * previews and the bouncing dice on the home and waiting screens.
+ */
+fun DrawScope.drawDieBody(face: Int?, onePipColor: Color, redFlash: Float = 0f, area: Rect = Rect(Offset.Zero, size)) {
+    val side = area.minDimension * 0.84f
+    val topLeft = area.center - Offset(side / 2, side / 2)
     val corner = CornerRadius(side * 0.22f)
     // Soft shadow under the die.
     drawRoundRect(Color.Black.copy(alpha = 0.28f), topLeft + Offset(side * 0.03f, side * 0.07f), Size(side, side), corner)

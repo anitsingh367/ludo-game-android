@@ -10,16 +10,13 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Surface
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -28,8 +25,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -37,6 +34,12 @@ import androidx.lifecycle.viewModelScope
 import com.example.ludoduel.AppContainer
 import com.example.ludoduel.R
 import com.example.ludoduel.data.SettingsStore
+import com.example.ludoduel.ui.components.BlueGloss
+import com.example.ludoduel.ui.components.BouncingDice
+import com.example.ludoduel.ui.components.GameTitle
+import com.example.ludoduel.ui.components.GlassCard
+import com.example.ludoduel.ui.components.GlossyButton
+import com.example.ludoduel.ui.components.GreenGloss
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -134,39 +137,29 @@ fun HomeScreen(onRoomCreated: (String) -> Unit, onJoin: () -> Unit, onRejoin: (S
         }
     }
 
-    Surface(Modifier.fillMaxSize(), color = Color.Transparent, contentColor = Color.White) {
-        Column(
-            Modifier
-                .safeDrawingPadding()
-                .verticalScroll(rememberScrollState())
-                .padding(24.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(16.dp),
-        ) {
-            Spacer(Modifier.height(24.dp))
-            Text(
-                stringResource(R.string.app_name),
-                style = MaterialTheme.typography.displaySmall,
-                fontWeight = FontWeight.Bold,
-            )
-            Text(stringResource(R.string.home_subtitle), style = MaterialTheme.typography.bodyLarge)
-            Spacer(Modifier.height(8.dp))
+    Column(
+        Modifier
+            .fillMaxSize()
+            .safeDrawingPadding()
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 24.dp, vertical = 16.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(18.dp),
+    ) {
+        Spacer(Modifier.height(12.dp))
+        GameTitle(stringResource(R.string.app_name))
+        Text(stringResource(R.string.home_subtitle), style = MaterialTheme.typography.titleMedium, color = Color.White.copy(alpha = 0.9f))
+        BouncingDice(Modifier.padding(vertical = 4.dp))
 
-            ui.rejoinCode?.let { code ->
-                Card(
-                    Modifier.fillMaxWidth(),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
-                ) {
-                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text(stringResource(R.string.home_rejoin_title), style = MaterialTheme.typography.titleMedium)
-                        Text(stringResource(R.string.home_rejoin_body, code))
-                        Button(onClick = { onRejoin(code) }, Modifier.fillMaxWidth()) {
-                            Text(stringResource(R.string.home_rejoin))
-                        }
-                    }
-                }
+        ui.rejoinCode?.let { code ->
+            GlassCard(Modifier.fillMaxWidth()) {
+                Text(stringResource(R.string.home_rejoin_title), style = MaterialTheme.typography.titleLarge, color = Color.White)
+                Text(stringResource(R.string.home_rejoin_body, code), color = Color.White.copy(alpha = 0.9f))
+                GlossyButton(stringResource(R.string.home_rejoin), { onRejoin(code) }, Modifier.fillMaxWidth(), colors = BlueGloss, height = 52.dp)
             }
+        }
 
+        GlassCard(Modifier.fillMaxWidth()) {
             OutlinedTextField(
                 value = ui.name,
                 onValueChange = vm::onNameChange,
@@ -175,27 +168,43 @@ fun HomeScreen(onRoomCreated: (String) -> Unit, onJoin: () -> Unit, onRejoin: (S
                 isError = !ui.nameValid,
                 supportingText = { if (!ui.nameValid) Text(stringResource(R.string.home_name_error)) },
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                shape = RoundedCornerShape(16.dp),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedTextColor = Color.White,
+                    unfocusedTextColor = Color.White,
+                    focusedBorderColor = Color(0xFFFFD54F),
+                    unfocusedBorderColor = Color.White.copy(alpha = 0.6f),
+                    focusedLabelColor = Color(0xFFFFD54F),
+                    unfocusedLabelColor = Color.White.copy(alpha = 0.8f),
+                    cursorColor = Color(0xFFFFD54F),
+                    errorTextColor = Color.White,
+                    errorSupportingTextColor = Color(0xFFFFCDD2),
+                    errorBorderColor = Color(0xFFFF8A80),
+                    errorLabelColor = Color(0xFFFF8A80),
+                ),
                 modifier = Modifier.fillMaxWidth(),
             )
-            Button(
-                onClick = vm::createRoom,
-                enabled = ui.nameValid && !ui.busy,
-                modifier = Modifier.fillMaxWidth().height(52.dp),
-            ) {
-                if (ui.busy) {
-                    CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
-                } else {
-                    Text(stringResource(R.string.home_create))
-                }
-            }
-            OutlinedButton(
-                onClick = vm::openJoin,
-                enabled = ui.nameValid && !ui.busy,
-                modifier = Modifier.fillMaxWidth().height(52.dp),
-            ) { Text(stringResource(R.string.home_join)) }
-            if (ui.createFailed) {
-                Text(stringResource(R.string.home_create_failed), color = MaterialTheme.colorScheme.error)
-            }
+        }
+        GlossyButton(
+            text = stringResource(R.string.home_create),
+            onClick = vm::createRoom,
+            enabled = ui.nameValid && !ui.busy,
+            modifier = Modifier.fillMaxWidth(),
+            content = if (ui.busy) {
+                { CircularProgressIndicator(Modifier.size(26.dp), color = Color.White, strokeWidth = 3.dp) }
+            } else {
+                null
+            },
+        )
+        GlossyButton(
+            text = stringResource(R.string.home_join),
+            onClick = vm::openJoin,
+            enabled = ui.nameValid && !ui.busy,
+            colors = GreenGloss,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        if (ui.createFailed) {
+            Text(stringResource(R.string.home_create_failed), color = Color(0xFFFFCDD2), textAlign = TextAlign.Center)
         }
     }
 }

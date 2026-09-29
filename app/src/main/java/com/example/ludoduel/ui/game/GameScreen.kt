@@ -46,6 +46,19 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.foundation.border
+import androidx.compose.ui.graphics.Brush
+import com.example.ludoduel.ui.components.PillView
+import com.example.ludoduel.ui.components.BlueGloss
+import com.example.ludoduel.ui.components.GlossyButton
+import com.example.ludoduel.ui.components.Scrim
+import com.example.ludoduel.ui.components.GameTitle
+import com.example.ludoduel.ui.components.Trophy
+import com.example.ludoduel.ui.components.ConfettiRain
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.Animatable
 import androidx.compose.ui.draw.drawWithContent
 import com.example.ludoduel.ui.components.Pill
 import com.example.ludoduel.ui.components.PillHost
@@ -215,7 +228,6 @@ private fun GameContent(
                                 description = stringResource(R.string.board_description, colorName),
                                 modifier = Modifier.fillMaxWidth(),
                             )
-                            if (over) GameOverCard(ui, shown, onRematch, onHome)
                         }
                     }
                     val active = !over && s.turn == color
@@ -259,6 +271,7 @@ private fun GameContent(
                 }
             }
         }
+        if (over) WinOverlay(ui, shown, animator.fx, onRematch, onHome)
         PillHost(
             animator.pills,
             persistent = connectionPill(ui, over, now),
@@ -334,33 +347,48 @@ private fun connectionPill(ui: GameUi, over: Boolean, now: () -> Long): Pill? {
     return Pill(stringResource(R.string.game_opponent_offline, "%d:%02d".format(seconds / 60, seconds % 60)), amber, spinner = true)
 }
 
+/**
+ * Game over. The winner gets a trophy with a crown, confetti rain and a victory sound; the loser a
+ * gentler "Good game!". Both see the reason, the rematch state and the Rematch / Home buttons.
+ */
 @Composable
-private fun GameOverCard(ui: GameUi, game: RoomGame, onRematch: () -> Unit, onHome: () -> Unit) {
+private fun WinOverlay(ui: GameUi, game: RoomGame, fx: GameFx, onRematch: () -> Unit, onHome: () -> Unit) {
     val s = game.state
     val winner = checkNotNull(s.winner)
-    val winnerName = if (winner == ui.me) ui.myName else ui.opponentName
-    val loserName = if (winner == ui.me) ui.opponentName else ui.myName
-    Card(
-        Modifier.padding(24.dp).fillMaxWidth(),
-        elevation = CardDefaults.cardElevation(8.dp),
-    ) {
+    val iWon = winner == ui.me
+    val winnerName = if (iWon) ui.myName else ui.opponentName
+    val loserName = if (iWon) ui.opponentName else ui.myName
+    val appear = remember(game) { Animatable(0f) }
+    LaunchedEffect(game) {
+        fx.play(if (iWon) Sfx.WIN else Sfx.LOSE)
+        appear.animateTo(1f, spring(dampingRatio = 0.55f, stiffness = Spring.StiffnessLow))
+    }
+    Scrim {
+        if (iWon) ConfettiRain(Modifier.fillMaxSize())
         Column(
-            Modifier.padding(20.dp).verticalScroll(rememberScrollState()),
+            Modifier
+                .padding(24.dp)
+                .graphicsLayer {
+                    scaleX = 0.7f + 0.3f * appear.value
+                    scaleY = 0.7f + 0.3f * appear.value
+                    alpha = appear.value.coerceIn(0f, 1f)
+                }
+                .verticalScroll(rememberScrollState()),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(10.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            Text(
-                stringResource(if (winner == ui.me) R.string.over_you_won else R.string.over_you_lost),
-                style = MaterialTheme.typography.headlineMedium,
-                fontWeight = FontWeight.Bold,
-            )
+            Trophy(Modifier.size(if (iWon) 170.dp else 120.dp).graphicsLayer { alpha = if (iWon) 1f else 0.75f })
+            GameTitle(stringResource(if (iWon) R.string.over_you_won else R.string.over_good_game), fontSize = 44)
+            WinnerChip(winnerName, winner)
             Text(
                 when (checkNotNull(s.winReason)) {
                     WinReason.ALL_HOME -> stringResource(R.string.over_reason_all_home, winnerName)
                     WinReason.FORFEIT -> stringResource(R.string.over_reason_forfeit, loserName)
                     WinReason.LEFT -> stringResource(R.string.over_reason_left, loserName)
                 },
+                color = Color.White.copy(alpha = 0.9f),
                 textAlign = TextAlign.Center,
+                style = MaterialTheme.typography.titleMedium,
             )
             val rematchNote = when {
                 ui.opponentLeft -> stringResource(R.string.over_opponent_left)
@@ -368,15 +396,41 @@ private fun GameOverCard(ui: GameUi, game: RoomGame, onRematch: () -> Unit, onHo
                 ui.opponentWantsRematch -> stringResource(R.string.over_rematch_offered, ui.opponentName)
                 else -> null
             }
-            rematchNote?.let { Text(it, style = MaterialTheme.typography.titleSmall, textAlign = TextAlign.Center) }
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                OutlinedButton(onClick = onHome) { Text(stringResource(R.string.over_home)) }
-                Button(
-                    onClick = onRematch,
-                    enabled = ui.connected && !ui.opponentLeft && !ui.iWantRematch,
-                ) { Text(stringResource(R.string.over_rematch)) }
-            }
+            rematchNote?.let { PillView(Pill(it, LocalLudoPalette.current.amber)) }
+            GlossyButton(
+                text = stringResource(R.string.over_rematch),
+                onClick = onRematch,
+                enabled = ui.connected && !ui.opponentLeft && !ui.iWantRematch,
+                modifier = Modifier.fillMaxWidth(0.8f),
+            )
+            GlossyButton(
+                text = stringResource(R.string.over_home),
+                onClick = onHome,
+                colors = BlueGloss,
+                height = 52.dp,
+                modifier = Modifier.fillMaxWidth(0.8f),
+            )
         }
+    }
+}
+
+/** The winner's name next to a pawn in their color. */
+@Composable
+private fun WinnerChip(name: String, color: PlayerColor) {
+    val colors = LocalLudoPalette.current.of(color)
+    val measurer = rememberTextMeasurer()
+    Row(
+        Modifier
+            .background(Brush.horizontalGradient(listOf(colors.main, colors.dark)), RoundedCornerShape(50))
+            .border(2.dp, Color.White.copy(alpha = 0.7f), RoundedCornerShape(50))
+            .padding(horizontal = 16.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Canvas(Modifier.size(22.dp, 30.dp)) {
+            drawPawn(Offset(size.width / 2, size.height * 0.58f), size.width * 1.3f, colors, PawnLook(), null, measurer)
+        }
+        Text(name, color = Color.White, fontWeight = FontWeight.ExtraBold, fontSize = 20.sp)
     }
 }
 
