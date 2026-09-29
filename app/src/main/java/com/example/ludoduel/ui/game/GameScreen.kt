@@ -87,6 +87,7 @@ import com.example.ludoduel.engine.WinReason
 import com.example.ludoduel.engine.YARD
 import com.example.ludoduel.ui.components.Glyph
 import com.example.ludoduel.ui.components.GlyphButton
+import com.example.ludoduel.ui.SettingsSheet
 import com.example.ludoduel.ui.containerViewModel
 import com.example.ludoduel.ui.rememberUiPrefs
 import com.example.ludoduel.ui.theme.LocalLudoPalette
@@ -99,6 +100,7 @@ fun GameScreen(onExit: () -> Unit) {
     val muted by vm.muted.collectAsStateWithLifecycle()
     var confirmLeave by rememberSaveable { mutableStateOf(false) }
     var showRules by rememberSaveable { mutableStateOf(false) }
+    var showSettings by rememberSaveable { mutableStateOf(false) }
 
     GameWindowEffects()
 
@@ -135,6 +137,7 @@ fun GameScreen(onExit: () -> Unit) {
                     onTokenTap = vm::move,
                     onToggleMute = vm::toggleMute,
                     onRules = { showRules = true },
+                    onSettings = { showSettings = true },
                     onRematch = vm::requestRematch,
                     onHome = exit,
                 )
@@ -157,6 +160,7 @@ fun GameScreen(onExit: () -> Unit) {
         )
     }
     if (showRules) HowToPlaySheet(onDismiss = { showRules = false })
+    if (showSettings) SettingsSheet(onDismiss = { showSettings = false })
 }
 
 @Composable
@@ -170,6 +174,7 @@ private fun GameContent(
     onTokenTap: (Int) -> Unit,
     onToggleMute: () -> Unit,
     onRules: () -> Unit,
+    onSettings: () -> Unit,
     onRematch: () -> Unit,
     onHome: () -> Unit,
 ) {
@@ -177,7 +182,7 @@ private fun GameContent(
     val density = LocalDensity.current
     val palette = LocalLudoPalette.current
     val animator = remember(ui.me) { GameAnimator(ui.me, game, density, palette) }
-    animator.fx = rememberGameFx(soundOn = !muted, vibrationOn = prefs.vibration)
+    animator.fx = LocalGameFx.current
     animator.texts = AnimatorTexts(
         plusOneTurn = stringResource(R.string.fx_plus_one_turn),
         noMoves = stringResource(R.string.fx_no_moves),
@@ -202,7 +207,7 @@ private fun GameContent(
 
     Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize().safeDrawingPadding()) {
-            TopBar(code, muted, onRules, onToggleMute)
+            TopBar(code, muted, onRules, onToggleMute, onSettings)
             // Board and both panels share the height; spare space is spread evenly so there are no big gaps.
             Column(Modifier.weight(1f).fillMaxWidth(), verticalArrangement = Arrangement.SpaceEvenly) {
                 for (color in listOf(ui.me.opponent, ui.me)) {
@@ -305,7 +310,7 @@ private fun DieFloater(die: DieVisual) {
 
 /** Slim top bar: room code on the left, help and sound buttons on the right. */
 @Composable
-private fun TopBar(code: String, muted: Boolean, onRules: () -> Unit, onToggleMute: () -> Unit) {
+private fun TopBar(code: String, muted: Boolean, onRules: () -> Unit, onToggleMute: () -> Unit, onSettings: () -> Unit) {
     Row(
         Modifier.fillMaxWidth().height(52.dp).padding(horizontal = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -325,6 +330,7 @@ private fun TopBar(code: String, muted: Boolean, onRules: () -> Unit, onToggleMu
             stringResource(if (muted) R.string.game_unmute else R.string.game_mute),
             onToggleMute,
         )
+        GlyphButton(Glyph.SETTINGS, stringResource(R.string.settings_open), onSettings)
     }
 }
 

@@ -7,8 +7,11 @@ import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.Modifier
 import com.example.ludoduel.ui.LudoNavHost
+import com.example.ludoduel.ui.game.LocalGameFx
+import com.example.ludoduel.ui.game.rememberAppFx
 import com.example.ludoduel.ui.theme.LudoBackground
 import com.example.ludoduel.ui.theme.LudoTheme
 
@@ -19,7 +22,9 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge(SystemBarStyle.dark(Color.TRANSPARENT), SystemBarStyle.dark(Color.TRANSPARENT))
         setContent {
             LudoTheme {
-                LudoBackground(Modifier.fillMaxSize()) { LudoNavHost() }
+                CompositionLocalProvider(LocalGameFx provides rememberAppFx()) {
+                    LudoBackground(Modifier.fillMaxSize()) { LudoNavHost() }
+                }
             }
         }
     }

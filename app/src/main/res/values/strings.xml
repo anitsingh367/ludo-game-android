@@ -87,6 +87,14 @@
     <string name="over_opponent_left">Opponent left</string>
     <string name="over_home">Home</string>
 
+    <!-- Settings -->
+    <string name="settings_title">Settings</string>
+    <string name="settings_open">Settings</string>
+    <string name="settings_sound">Sound</string>
+    <string name="settings_vibration">Vibration</string>
+    <string name="settings_colorblind">Colorblind mode</string>
+    <string name="settings_colorblind_hint">Shows a letter on every token (R or Y)</string>
+
     <!-- How to play -->
     <string name="rules_title">How to play</string>
     <string name="rules_body">• Roll the dice on your turn, then tap a glowing token to move it.\n• A token leaves the yard only on a 6.\n• A 6 gives you another roll. Three 6s in a row lose the turn.\n• Land on a single opponent token to send it back to its yard and roll again. Star squares are safe.\n• Two of your tokens on one square make a block. Your opponent cannot land on it or pass it.\n• You need the exact number to reach home. A token reaching home gives another roll.\n• You have 30 seconds per turn. Miss 3 turns in a row and you lose.\n• First to bring all four tokens home wins.</string>

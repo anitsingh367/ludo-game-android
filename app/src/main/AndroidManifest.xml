@@ -3,6 +3,8 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- Light vibration on roll, capture and home (can be turned off in settings). -->
+    <uses-permission android:name="android.permission.VIBRATE" />
 
     <application
         android:name=".LudoApp"

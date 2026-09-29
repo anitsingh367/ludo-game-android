@@ -112,12 +112,20 @@ fun LudoBoard(
                 val look = token.look()
                 val canMove = key in movableKeys
                 if (canMove) {
-                    val ringR = unit * (0.36f + 0.2f * pulse) * look.scale
+                    // A steady soft glow under the token plus a ring that pulses outwards.
+                    val baseY = unit * 0.36f * look.scale
+                    val glowR = unit * 0.42f * look.scale
                     drawOval(
-                        Color.White.copy(alpha = 0.9f * (1f - pulse)),
-                        topLeft = center + Offset(-ringR, unit * 0.36f * look.scale - ringR * 0.4f),
-                        size = Size(ringR * 2, ringR * 0.8f),
-                        style = Stroke(unit * 0.07f),
+                        Color.White.copy(alpha = 0.75f),
+                        topLeft = center + Offset(-glowR, baseY - glowR * 0.42f),
+                        size = Size(glowR * 2, glowR * 0.84f),
+                    )
+                    val ringR = unit * (0.4f + 0.24f * pulse) * look.scale
+                    drawOval(
+                        Color.White.copy(alpha = 1f - pulse),
+                        topLeft = center + Offset(-ringR, baseY - ringR * 0.42f),
+                        size = Size(ringR * 2, ringR * 0.84f),
+                        style = Stroke(unit * 0.09f),
                     )
                 }
                 drawPawn(
