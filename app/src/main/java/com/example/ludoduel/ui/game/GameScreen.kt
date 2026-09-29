@@ -81,6 +81,7 @@ import com.example.ludoduel.data.GameReducer
 import com.example.ludoduel.data.RoomGame
 import com.example.ludoduel.engine.ActionType
 import com.example.ludoduel.engine.HOME
+import com.example.ludoduel.engine.LudoEngine
 import com.example.ludoduel.engine.Phase
 import com.example.ludoduel.engine.PlayerColor
 import com.example.ludoduel.engine.WinReason
@@ -92,6 +93,9 @@ import com.example.ludoduel.ui.containerViewModel
 import com.example.ludoduel.ui.rememberUiPrefs
 import com.example.ludoduel.ui.theme.LocalLudoPalette
 import kotlinx.coroutines.delay
+
+/** How long the number stays visible before the only movable token moves by itself. */
+private const val AUTO_MOVE_DELAY_MILLIS = 500L
 
 /** Space between the board and each player panel. */
 private val PANEL_GAP = 10.dp
@@ -207,6 +211,15 @@ private fun GameContent(
     val caughtUp = !animator.busy && shown == game
     val movable = if (caughtUp) ui.movable else emptyList()
     val canRoll = caughtUp && ui.canRoll
+    // Exactly one token can move: move it by itself shortly after the dice has landed (the player
+    // sees the number first). Board taps do nothing meanwhile.
+    val autoToken = if (caughtUp) LudoEngine.onlyMovableToken(s, ui.me) else null
+    LaunchedEffect(autoToken, shown.version) {
+        if (autoToken != null) {
+            delay(AUTO_MOVE_DELAY_MILLIS)
+            onTokenTap(autoToken)
+        }
+    }
 
     Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize().safeDrawingPadding()) {
@@ -272,6 +285,7 @@ private fun GameContent(
                 LudoBoard(
                     animator = animator,
                     movable = movable,
+                    tapsEnabled = autoToken == null,
                     colorblind = prefs.colorblind,
                     onTokenTap = onTokenTap,
                     description = stringResource(R.string.board_description, colorName),

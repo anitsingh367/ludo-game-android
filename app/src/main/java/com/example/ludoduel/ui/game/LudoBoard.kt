@@ -13,6 +13,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
@@ -55,6 +56,8 @@ fun LudoBoard(
     onTokenTap: (Int) -> Unit,
     description: String,
     modifier: Modifier = Modifier,
+    /** False while the app moves the only movable token by itself: taps do nothing then. */
+    tapsEnabled: Boolean = true,
 ) {
     val me = animator.viewer
     val palette = LocalLudoPalette.current
@@ -87,6 +90,11 @@ fun LudoBoard(
 
     val currentMovable by rememberUpdatedState(movable)
     val currentTap by rememberUpdatedState(onTokenTap)
+    val currentTapsEnabled by rememberUpdatedState(tapsEnabled)
+    val fx = LocalGameFx.current
+    // Two tokens that were "too close to call": shown enlarged until the next tap decides.
+    var tooClose by remember { mutableStateOf(emptyList<Int>()) }
+    LaunchedEffect(movable) { tooClose = emptyList() }
 
     BoardFrame(me, modifier) {
         Canvas(
@@ -95,10 +103,26 @@ fun LudoBoard(
                 .semantics { contentDescription = description }
                 .pointerInput(me) {
                     detectTapGestures { tap ->
+                        if (!currentTapsEnabled) return@detectTapGestures
+                        val unit = size.width / BoardGeometry.SIZE.toFloat()
                         val myTokens = animator.shown.state.tokensOf(me)
-                        pickToken(tap, size.width / BoardGeometry.SIZE.toFloat(), 24.dp.toPx(), currentMovable, myTokens) {
-                            animator.tokens.getValue(TokenKey(me, it)).pos
-                        }?.let { currentTap(it) }
+                        // After "too close", the second tap only chooses between those two squares.
+                        val candidates = if (tooClose.isEmpty()) {
+                            currentMovable
+                        } else {
+                            val squares = tooClose.map { myTokens[it] }.toSet()
+                            currentMovable.filter { myTokens[it] in squares }
+                        }
+                        val result = pickToken(tap / unit, candidates, myTokens) { animator.tokens.getValue(TokenKey(me, it)).pos }
+                        when (result) {
+                            is TapResult.Pick -> {
+                                tooClose = emptyList()
+                                fx.buzz(Buzz.PICK)
+                                currentTap(result.token)
+                            }
+                            is TapResult.TooClose -> tooClose = result.tokens
+                            TapResult.Miss -> tooClose = emptyList()
+                        }
                     }
                 },
         ) {
@@ -121,31 +145,36 @@ fun LudoBoard(
             for (key in order) {
                 val token = animator.tokens.getValue(key)
                 val center = token.pos * unit
-                val look = token.look()
                 val canMove = key in movableKeys
+                var look = token.look()
+                if (key.color == me && key.index in tooClose) look = look.copy(scale = look.scale * 1.3f)
+                val s = look.scale * unit
                 if (canMove) {
-                    // A steady soft glow under the token plus a ring that pulses outwards.
-                    val baseY = unit * 0.36f * look.scale
-                    val glowR = unit * 0.42f * look.scale
-                    drawOval(
-                        Color.White.copy(alpha = 0.75f),
-                        topLeft = center + Offset(-glowR, baseY - glowR * 0.42f),
-                        size = Size(glowR * 2, glowR * 0.84f),
-                    )
+                    // A steady soft glow under the token plus a ring that pulses outwards, both
+                    // inside the token's square.
+                    val baseY = PawnShape.BASE_Y * s
+                    val glowRx = (PawnShape.GLOW_RX - 0.03f) * s
+                    val glowRy = (PawnShape.GLOW_RY - 0.02f) * s
+                    drawOval(Color.White.copy(alpha = 0.75f), center + Offset(-glowRx, baseY - glowRy), Size(glowRx * 2, glowRy * 2))
                     val pulse = pulseAnim.value
-                    val ringR = unit * (0.4f + 0.24f * pulse) * look.scale
+                    val ringRx = (PawnShape.BASE_RX + (PawnShape.GLOW_RX - PawnShape.BASE_RX) * pulse) * s
+                    val ringRy = (PawnShape.BASE_RY + (PawnShape.GLOW_RY - PawnShape.BASE_RY) * pulse) * s
                     drawOval(
                         Color.White.copy(alpha = 1f - pulse),
-                        topLeft = center + Offset(-ringR, baseY - ringR * 0.42f),
-                        size = Size(ringR * 2, ringR * 0.84f),
-                        style = Stroke(unit * 0.09f),
+                        center + Offset(-ringRx, baseY - ringRy),
+                        Size(ringRx * 2, ringRy * 2),
+                        style = Stroke(s * 0.05f),
                     )
+                    look = look.copy(liftPx = look.liftPx + PawnShape.BOB * s * bobAnim.value)
                 }
+                // Never lift the head above the board's top edge (hops along the top row).
+                val headTop = center.y + (PawnShape.HEAD_Y - PawnShape.HEAD_R) * s
+                look = look.copy(liftPx = look.liftPx.coerceAtMost(headTop.coerceAtLeast(0f)))
                 drawPawn(
                     base = center,
                     unit = unit,
                     colors = palette.of(key.color),
-                    look = if (canMove) look.copy(liftPx = look.liftPx + 4.dp.toPx() * bobAnim.value) else look,
+                    look = look,
                     letter = if (colorblind) colorblindLetter(key.color) else null,
                     textMeasurer = textMeasurer,
                 )
@@ -155,23 +184,38 @@ fun LudoBoard(
     }
 }
 
+/** What a tap on the board means. */
+sealed interface TapResult {
+    data class Pick(val token: Int) : TapResult
+    /** Two movable tokens on different squares are about equally close: ask for a second tap. */
+    data class TooClose(val tokens: List<Int>) : TapResult
+    data object Miss : TapResult
+}
+
+/** A tap selects a movable token up to this far away (in squares). */
+const val TAP_RADIUS = 1.5f
+/** Two candidates closer in distance than this (in squares) are "too close to call". */
+const val TOO_CLOSE = 0.3f
+
 /**
- * Finds the token to move for a tap. The touch area is at least [minRadius] (24 dp, so 48 dp
- * across) even when tokens are small or stacked. When the tap hits a stack, it picks a token that
- * can move; if several can, the first one.
+ * Finds the token a tap means, in board squares. Only tokens that can legally move are considered,
+ * so a token that cannot move never steals a tap. Tokens on the same square (the same progress,
+ * which also covers tokens in the yard) make the same move, so they count as one candidate; the one
+ * nearest the tap is picked.
  */
-internal fun pickToken(
-    tap: Offset,
-    unit: Float,
-    minRadius: Float,
-    movable: List<Int>,
-    myTokens: List<Int>,
-    positionOf: (Int) -> Offset,
-): Int? {
-    val radius = maxOf(minRadius, unit * 0.6f)
-    val nearest = movable.minByOrNull { (positionOf(it) * unit - tap).getDistance() } ?: return null
-    if ((positionOf(nearest) * unit - tap).getDistance() > radius) return null
-    return movable.filter { myTokens[it] == myTokens[nearest] }.min()
+internal fun pickToken(tap: Offset, movable: List<Int>, myTokens: List<Int>, positionOf: (Int) -> Offset): TapResult {
+    val near = movable
+        .map { it to (positionOf(it) - tap).getDistance() }
+        .filter { it.second <= TAP_RADIUS }
+    if (near.isEmpty()) return TapResult.Miss
+    val bySquare = near
+        .groupBy { myTokens[it.first] }
+        .map { (_, tokens) -> tokens.minBy { it.second } }
+        .sortedBy { it.second }
+    if (bySquare.size >= 2 && bySquare[1].second - bySquare[0].second < TOO_CLOSE) {
+        return TapResult.TooClose(listOf(bySquare[0].first, bySquare[1].first))
+    }
+    return TapResult.Pick(bySquare[0].first)
 }
 
 /** A subtle shared outline around two or more tokens of one color on a track square (a block). */

@@ -336,4 +336,36 @@ class LudoEngineTest {
         val seen = (1..2000).map { Dice.roll() }.toSet()
         assertEquals((1..6).toSet(), seen)
     }
+
+    // Only one token can move -> the app moves it by itself; two or more -> the player chooses.
+    @Test fun `only movable token - one token out, others in the yard, no six`() {
+        val s = state(red = listOf(10, -1, -1, -1)).act(Action.Roll(3))
+        assertEquals(0, LudoEngine.onlyMovableToken(s, RED))
+    }
+
+    @Test fun `only movable token - near-home token would overshoot, the other moves`() {
+        val s = state(red = listOf(53, 20, 56, 56)).act(Action.Roll(6))
+        assertEquals(1, LudoEngine.onlyMovableToken(s, RED))
+    }
+
+    @Test fun `only movable token - a token behind an opponent block cannot move`() {
+        val s = state(red = listOf(5, 30, 56, 56), yellow = listOf(yellowAt(7), yellowAt(7), -1, -1)).act(Action.Roll(4))
+        assertEquals(1, LudoEngine.onlyMovableToken(s, RED))
+    }
+
+    @Test fun `player chooses when two or more tokens can move`() {
+        assertNull(LudoEngine.onlyMovableToken(state(red = listOf(10, 20, -1, -1)).act(Action.Roll(3)), RED))
+        // A six with all four in the yard: the player picks which one comes out.
+        assertNull(LudoEngine.onlyMovableToken(state().act(Action.Roll(6)), RED))
+        // Two tokens on the same square: the player taps the one to move.
+        assertNull(LudoEngine.onlyMovableToken(state(red = listOf(10, 10, -1, -1)).act(Action.Roll(3)), RED))
+    }
+
+    @Test fun `only movable token is null when nothing can move or it is not the player's move`() {
+        val passed = state().act(Action.Roll(3)) // no legal move: the turn passed
+        assertNull(LudoEngine.onlyMovableToken(passed, RED))
+        val s = state(red = listOf(10, -1, -1, -1)).act(Action.Roll(3))
+        assertNull(LudoEngine.onlyMovableToken(s, YELLOW))
+        assertNull(LudoEngine.onlyMovableToken(state(red = listOf(10, -1, -1, -1)), RED)) // still ROLL phase
+    }
 }

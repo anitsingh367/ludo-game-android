@@ -69,7 +69,7 @@ class BoardGeometryTest {
         assertEquals(8, spots.size)
         val stacked = listOf(spots.getValue(TokenKey(PlayerColor.RED, 0)), spots.getValue(TokenKey(PlayerColor.RED, 1)))
         assertTrue(stacked[0].point != stacked[1].point)
-        assertTrue(stacked.all { it.scale == BoardGeometry.STACK_SCALE })
+        assertTrue(stacked.all { it.scale == 0.6f })
         assertEquals(1f, spots.getValue(TokenKey(PlayerColor.RED, 2)).scale)
         // Finished tokens share their color's finish spot.
         val yellowDone = (0..2).map { spots.getValue(TokenKey(PlayerColor.YELLOW, it)).point }.toSet()

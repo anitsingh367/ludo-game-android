@@ -65,6 +65,7 @@ class SoundFx(context: Context) : GameFx {
         if (!vibrationOn || !vibrator.hasVibrator()) return
         val effect = when (kind) {
             Buzz.ROLL -> VibrationEffect.createOneShot(18, 70)
+            Buzz.PICK -> VibrationEffect.createOneShot(12, 60)
             Buzz.CAPTURE -> VibrationEffect.createOneShot(45, 180)
             Buzz.HOME -> VibrationEffect.createWaveform(longArrayOf(0, 30, 60, 40), intArrayOf(0, 140, 0, 200), -1)
         }

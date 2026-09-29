@@ -210,11 +210,6 @@ class GameViewModel(private val c: AppContainer, saved: SavedStateHandle) : View
                             delay(AUTO_MOVE_DELAY_MILLIS)
                             act(game, Action.Move(legal.first(), auto = true))
                         }
-                        // Only one choice: play it if the player doesn't tap it first.
-                        legal.size == 1 -> {
-                            delay(SINGLE_MOVE_DELAY_MILLIS)
-                            act(game, Action.Move(legal.single()))
-                        }
                         else -> {
                             waitUntil(game.turnDeadline)
                             act(game, Action.Move(legal.first(), auto = true))
@@ -250,7 +245,6 @@ class GameViewModel(private val c: AppContainer, saved: SavedStateHandle) : View
     }
 
     private companion object {
-        const val SINGLE_MOVE_DELAY_MILLIS = 1_500L
         const val AUTO_MOVE_DELAY_MILLIS = 800L
         const val TIMEOUT_MARGIN_MILLIS = 1_000L
         const val TIMEOUT_RETRY_MILLIS = 2_000L

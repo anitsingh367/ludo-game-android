@@ -17,6 +17,17 @@ object LudoEngine {
         return tokens.indices.filter { targetOf(state, color, tokens[it], dice) != null }
     }
 
+    /**
+     * When it is [color]'s turn to move and exactly one token has a legal move, that token (the app
+     * moves it by itself). Null when there is nothing to move or the player has a choice (two or more
+     * tokens can move, including two tokens on the same square or bringing out one of several yard
+     * tokens with a 6).
+     */
+    fun onlyMovableToken(state: GameState, color: PlayerColor): Int? {
+        if (state.phase != Phase.MOVE || state.turn != color) return null
+        return legalMoves(state, color, checkNotNull(state.dice)).singleOrNull()
+    }
+
     fun apply(state: GameState, action: Action, actor: PlayerColor): Result<GameState> {
         if (state.phase == Phase.OVER) return fail("The game is over")
         return when (action) {
