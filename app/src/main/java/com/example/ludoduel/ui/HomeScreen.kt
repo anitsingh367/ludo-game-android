@@ -3,6 +3,10 @@ package com.example.ludoduel.ui
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.ui.semantics.Role
+import androidx.compose.material3.Switch
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -61,6 +65,8 @@ data class HomeUi(
     val rejoinCode: String? = null,
     val busy: Boolean = false,
     val createFailed: Boolean = false,
+    /** The Lucky Boost setting for the room this player creates (on by default). */
+    val luckyBoost: Boolean = true,
 )
 
 sealed interface HomeEvent {
@@ -108,13 +114,17 @@ class HomeViewModel(private val c: AppContainer) : ViewModel() {
         viewModelScope.launch {
             val name = ui.name.trim()
             c.settings.setName(name)
-            val code = runCatching { c.rooms.createRoom(c.auth.signIn(), name) }.getOrNull()
+            val code = runCatching { c.rooms.createRoom(c.auth.signIn(), name, ui.luckyBoost) }.getOrNull()
             if (code != null) {
                 c.settings.setActiveRoom(code)
                 _events.send(HomeEvent.RoomCreated(code))
             }
             _ui.update { it.copy(busy = false, createFailed = code == null) }
         }
+    }
+
+    fun setLuckyBoost(on: Boolean) {
+        _ui.update { it.copy(luckyBoost = on) }
     }
 
     fun openJoin() {
@@ -193,6 +203,20 @@ fun HomeScreen(onRoomCreated: (String) -> Unit, onJoin: () -> Unit, onRejoin: (S
                     ),
                     modifier = Modifier.fillMaxWidth(),
                 )
+            }
+            // Room setting for the room this player creates.
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .toggleable(value = ui.luckyBoost, role = Role.Switch, onValueChange = vm::setLuckyBoost)
+                    .padding(horizontal = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text(stringResource(R.string.home_lucky_boost), style = MaterialTheme.typography.titleMedium, color = Color.White)
+                    Text(stringResource(R.string.home_lucky_boost_hint), style = MaterialTheme.typography.bodySmall, color = Color.White.copy(alpha = 0.85f))
+                }
+                Switch(checked = ui.luckyBoost, onCheckedChange = null)
             }
             GlossyButton(
                 text = stringResource(R.string.home_create),

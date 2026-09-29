@@ -58,7 +58,8 @@ object LudoEngine {
         val winnerOk = (state.phase == Phase.OVER) == (state.winner != null && state.winReason != null)
         return tokensOk && diceOk && winnerOk &&
             state.sixesInRow in 0..2 &&
-            state.missedRed in 0..MAX_MISSED_TURNS && state.missedYellow in 0..MAX_MISSED_TURNS
+            state.missedRed in 0..MAX_MISSED_TURNS && state.missedYellow in 0..MAX_MISSED_TURNS &&
+            state.noSixRed >= 0 && state.noSixYellow >= 0
     }
 
     private fun roll(state: GameState, action: Action.Roll, actor: PlayerColor): Result<GameState> {
@@ -68,7 +69,9 @@ object LudoEngine {
 
         val missed = if (action.auto) state.missedOf(actor) + 1 else 0
         val record = LastAction(ActionType.ROLL, actor, dice = action.value, auto = action.auto)
-        val counted = state.withMissed(actor, missed).copy(lastAction = record)
+        // Lucky Boost count: grows while the player has no token on the board and rolls no 6.
+        val noSix = if (state.hasTokenOnBoard(actor) || action.value == 6) 0 else state.noSixOf(actor) + 1
+        val counted = state.withMissed(actor, missed).withNoSix(actor, noSix).copy(lastAction = record)
         if (missed >= MAX_MISSED_TURNS) return Result.success(forfeitByTimeouts(counted, actor))
 
         val sixes = if (action.value == 6) state.sixesInRow + 1 else 0

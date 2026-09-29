@@ -43,6 +43,7 @@ data class GameUi(
     val opponentLeft: Boolean = false,
     val iWantRematch: Boolean = false,
     val opponentWantsRematch: Boolean = false,
+    val luckyBoost: Boolean = false,
 )
 
 /**
@@ -92,7 +93,7 @@ class GameViewModel(private val c: AppContainer, saved: SavedStateHandle) : View
             onResult(false)
             return
         }
-        viewModelScope.launch { onResult(act(game, Action.Roll(Dice.roll()))) }
+        viewModelScope.launch { onResult(act(game, Action.Roll(rollValue(game)))) }
     }
 
     fun move(token: Int) {
@@ -129,6 +130,13 @@ class GameViewModel(private val c: AppContainer, saved: SavedStateHandle) : View
     }
 
     private fun seats(): Seats? = (room.value as? RoomEvent.Loaded)?.room?.seats
+
+    /** My roll for [game], with the room's Lucky Boost setting (see [Dice.rollFor]). */
+    private fun rollValue(game: RoomGame): Int {
+        val loaded = checkNotNull((room.value as? RoomEvent.Loaded)?.room)
+        val me = checkNotNull(loaded.seats?.colorOf(checkNotNull(uid.value)))
+        return Dice.rollFor(game.state, me, loaded.luckyBoost)
+    }
 
     private suspend fun act(game: RoomGame, action: Action): Boolean {
         val seats = seats() ?: return false
@@ -178,6 +186,7 @@ class GameViewModel(private val c: AppContainer, saved: SavedStateHandle) : View
             opponentLeft = r.status == RoomStatus.ABANDONED,
             iWantRematch = r.rematch[id] == game.gameNumber,
             opponentWantsRematch = r.rematch[opponentUid] == game.gameNumber,
+            luckyBoost = r.luckyBoost,
         )
     }
 
@@ -203,7 +212,7 @@ class GameViewModel(private val c: AppContainer, saved: SavedStateHandle) : View
                 Phase.ROLL -> {
                     // My time ran out with the app open: roll for me.
                     waitUntil(game.turnDeadline)
-                    act(game, Action.Roll(Dice.roll(), auto = true))
+                    act(game, Action.Roll(rollValue(game), auto = true))
                 }
                 Phase.MOVE -> {
                     val legal = LudoEngine.legalMoves(s, input.me, checkNotNull(s.dice))

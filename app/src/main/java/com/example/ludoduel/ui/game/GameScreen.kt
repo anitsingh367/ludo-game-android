@@ -201,7 +201,9 @@ private fun GameContent(
         playersTurn = stringResource(R.string.fx_players_turn),
         ranOutOfTime = stringResource(R.string.game_timeout),
         couldNotRoll = stringResource(R.string.fx_could_not_roll),
+        luckyBoost = stringResource(R.string.fx_lucky_boost),
     )
+    animator.luckyBoost = ui.luckyBoost
     animator.nameOf = { if (it == ui.me) ui.myName else ui.opponentName }
     LaunchedEffect(animator) { animator.run() }
     LaunchedEffect(animator, game) { animator.submit(game) }
@@ -255,6 +257,7 @@ private fun GameContent(
             onMove = onTokenTap,
             onRematch = onRematch,
             onFinished = { message ->
+                android.util.Log.i("LudoStress", message) // debug builds only: readable with adb logcat
                 stressRunning = false
                 animator.pills.show(message, palette.amber)
             },

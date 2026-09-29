@@ -58,7 +58,7 @@ class RoomRepository(private val db: FirebaseDatabase, private val clock: Server
     )
 
     /** Creates a room with a fresh code. Returns the code, or null after 5 failed attempts. */
-    suspend fun createRoom(uid: String, name: String): String? {
+    suspend fun createRoom(uid: String, name: String, luckyBoost: Boolean): String? {
         repeat(CREATE_ATTEMPTS) {
             val code = RoomCodes.generate()
             val now = clock.now()
@@ -73,6 +73,7 @@ class RoomRepository(private val db: FirebaseDatabase, private val clock: Server
                         "expiresAt" to now + ROOM_LIFETIME_MILLIS,
                         "hostUid" to uid,
                         "status" to "waiting",
+                        "luckyBoost" to luckyBoost,
                         "players" to mapOf(uid to player("red", name)),
                     )
                     true
