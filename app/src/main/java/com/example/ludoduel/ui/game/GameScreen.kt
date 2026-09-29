@@ -75,7 +75,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.ludoduel.BuildConfig
 import com.example.ludoduel.R
 import com.example.ludoduel.data.GameReducer
 import com.example.ludoduel.data.RoomGame
@@ -177,7 +179,7 @@ private fun GameContent(
     code: String,
     muted: Boolean,
     now: () -> Long,
-    onRoll: () -> Unit,
+    onRoll: (onResult: (Boolean) -> Unit) -> Unit,
     onTokenTap: (Int) -> Unit,
     onToggleMute: () -> Unit,
     onRules: () -> Unit,
@@ -198,10 +200,24 @@ private fun GameContent(
         yourTurn = stringResource(R.string.fx_your_turn),
         playersTurn = stringResource(R.string.fx_players_turn),
         ranOutOfTime = stringResource(R.string.game_timeout),
+        couldNotRoll = stringResource(R.string.fx_could_not_roll),
     )
     animator.nameOf = { if (it == ui.me) ui.myName else ui.opponentName }
     LaunchedEffect(animator) { animator.run() }
     LaunchedEffect(animator, game) { animator.submit(game) }
+    // Safety net for my roll: no confirmed roll within 5 s gives up and re-enables the die.
+    val rollState = animator.myRollState
+    LaunchedEffect(rollState) {
+        if (rollState is RollMachine.State.Waiting) {
+            delay(RollMachine.TIMEOUT_MILLIS)
+            animator.tickRoll(System.currentTimeMillis())
+        }
+    }
+    // Coming back to the app runs the same check (the timer may have paused in the background).
+    LifecycleResumeEffect(animator) {
+        animator.tickRoll(System.currentTimeMillis())
+        onPauseOrDispose { }
+    }
 
     // What the screen shows is the animator's state, which may lag the server by an animation.
     val shown = animator.shown
@@ -220,10 +236,34 @@ private fun GameContent(
             onTokenTap(autoToken)
         }
     }
+    // Debug builds: a stress test that rolls and moves by itself 200 times.
+    var stressRunning by remember { mutableStateOf(false) }
+    if (BuildConfig.DEBUG) {
+        StressTestEffect(
+            running = stressRunning,
+            rolls = 200,
+            stuckMillis = 60_000,
+            canRoll = canRoll && animator.myRollState == RollMachine.State.Idle,
+            movable = movable,
+            autoMoving = autoToken != null,
+            over = over,
+            onRoll = {
+                if (animator.tapRoll(System.currentTimeMillis())) {
+                    onRoll { sent -> if (!sent) animator.rollSendFailed() }
+                }
+            },
+            onMove = onTokenTap,
+            onRematch = onRematch,
+            onFinished = { message ->
+                stressRunning = false
+                animator.pills.show(message, palette.amber)
+            },
+        )
+    }
 
     Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize().safeDrawingPadding()) {
-            TopBar(code, muted, onRules, onToggleMute, onSettings)
+            TopBar(code, muted, onRules, onToggleMute, onSettings, onStress = { stressRunning = true }.takeIf { BuildConfig.DEBUG && !stressRunning })
             val panel = @Composable { color: PlayerColor, modifier: Modifier ->
                 val isMe = color == ui.me
                 val active = !over && s.turn == color
@@ -246,7 +286,7 @@ private fun GameContent(
                     DiceBox(active = active) {
                         if (animator.dieOwner == color) {
                             val die = animator.dice.getValue(color)
-                            val enabled = isMe && canRoll
+                            val enabled = isMe && canRoll && animator.myRollState == RollMachine.State.Idle
                             Die(
                                 visual = die,
                                 color = color,
@@ -255,8 +295,9 @@ private fun GameContent(
                                     ?.let { stringResource(R.string.game_dice_description, it) }
                                     ?: stringResource(R.string.game_roll),
                                 onRoll = {
-                                    animator.startLocalRoll()
-                                    onRoll()
+                                    if (animator.tapRoll(System.currentTimeMillis())) {
+                                        onRoll { sent -> if (!sent) animator.rollSendFailed() }
+                                    }
                                 },
                                 modifier = Modifier.fillMaxSize(),
                             )
@@ -330,7 +371,15 @@ private fun DieFloater(die: DieVisual) {
 
 /** Slim top bar: room code on the left, help and sound buttons on the right. */
 @Composable
-private fun TopBar(code: String, muted: Boolean, onRules: () -> Unit, onToggleMute: () -> Unit, onSettings: () -> Unit) {
+private fun TopBar(
+    code: String,
+    muted: Boolean,
+    onRules: () -> Unit,
+    onToggleMute: () -> Unit,
+    onSettings: () -> Unit,
+    /** Debug builds only: starts the 200-roll stress test. */
+    onStress: (() -> Unit)?,
+) {
     Row(
         Modifier.fillMaxWidth().height(52.dp).padding(horizontal = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -344,6 +393,9 @@ private fun TopBar(code: String, muted: Boolean, onRules: () -> Unit, onToggleMu
                 .padding(horizontal = 14.dp, vertical = 6.dp),
         )
         Spacer(Modifier.weight(1f))
+        if (onStress != null) {
+            TextButton(onClick = onStress) { Text("×200", color = Color.White, fontWeight = FontWeight.Bold) }
+        }
         GlyphButton(Glyph.HELP, stringResource(R.string.game_how_to_play), onRules)
         GlyphButton(
             if (muted) Glyph.SOUND_OFF else Glyph.SOUND_ON,

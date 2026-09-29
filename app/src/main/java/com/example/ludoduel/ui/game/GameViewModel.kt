@@ -84,11 +84,15 @@ class GameViewModel(private val c: AppContainer, saved: SavedStateHandle) : View
 
     fun serverNow(): Long = c.clock.now()
 
-    fun roll() {
+    /** Sends my roll. [onResult] is told whether the roll was written (false: ignored or refused). */
+    fun roll(onResult: (Boolean) -> Unit) {
         val ui = ui.value
-        val game = ui.game ?: return
-        if (!ui.canRoll) return
-        viewModelScope.launch { act(game, Action.Roll(Dice.roll())) }
+        val game = ui.game
+        if (game == null || !ui.canRoll) {
+            onResult(false)
+            return
+        }
+        viewModelScope.launch { onResult(act(game, Action.Roll(Dice.roll()))) }
     }
 
     fun move(token: Int) {

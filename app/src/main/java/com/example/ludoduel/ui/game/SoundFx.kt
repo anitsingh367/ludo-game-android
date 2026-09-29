@@ -37,6 +37,7 @@ class SoundFx(context: Context) : GameFx {
 
     private val ids: Map<Sfx, Int> = mapOf(
         Sfx.ROLL to R.raw.sfx_roll,
+        Sfx.CLACK to R.raw.sfx_clack,
         Sfx.HOP to R.raw.sfx_hop,
         Sfx.CAPTURE to R.raw.sfx_capture,
         Sfx.HOME to R.raw.sfx_home,

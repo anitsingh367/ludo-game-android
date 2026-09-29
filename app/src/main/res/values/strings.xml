@@ -60,6 +60,7 @@
     <string name="fx_no_moves">No moves</string>
     <string name="fx_three_sixes">3 sixes — turn lost</string>
     <string name="fx_captured">Captured! +1 turn</string>
+    <string name="fx_could_not_roll">Couldn\'t roll — tap again</string>
     <string name="fx_your_turn">Your turn!</string>
     <string name="fx_players_turn">%1$s\'s turn</string>
     <string name="game_roll">Roll</string>

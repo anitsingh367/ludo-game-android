@@ -54,7 +54,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.ludoduel.ui.game.LocalGameFx
 import com.example.ludoduel.ui.game.Sfx
-import com.example.ludoduel.ui.game.drawDieBody
+import com.example.ludoduel.ui.game.drawDieCube
 import com.example.ludoduel.ui.theme.Baloo
 import com.example.ludoduel.ui.theme.LocalLudoPalette
 import com.example.ludoduel.ui.theme.LudoBackground
@@ -175,7 +175,8 @@ fun BouncingDice(modifier: Modifier = Modifier, size: Dp = 64.dp) {
                 val dieSize = this.size.width
                 translate(top = (this.size.height - dieSize) * (1f - bounce)) {
                     rotate(if (i == 0) -20f * bounce else 18f * bounce, Offset(dieSize / 2, dieSize / 2)) {
-                        drawDieBody(face, if (i == 0) palette.red.main else palette.blue.main, area = Rect(0f, 0f, dieSize, dieSize))
+                        val (x, y, z) = com.example.ludoduel.ui.game.DieCube.restAngles(face)
+                        drawDieCube(face, x, y, z, if (i == 0) palette.red.main else palette.blue.main, area = Rect(0f, 0f, dieSize, dieSize))
                     }
                 }
                 // Shadow on the floor, smaller while the die is up.
