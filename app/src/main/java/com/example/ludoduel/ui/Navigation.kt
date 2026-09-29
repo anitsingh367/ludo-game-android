@@ -1,11 +1,18 @@
 package com.example.ludoduel.ui
 
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.runtime.Composable
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.example.ludoduel.ui.game.GameScreen
+
+private const val TRANSITION_MILLIS = 250
 
 private object Routes {
     const val SPLASH = "splash"
@@ -27,7 +34,15 @@ private fun NavHostController.openGame(code: String) =
 @Composable
 fun LudoNavHost() {
     val nav = rememberNavController()
-    NavHost(navController = nav, startDestination = Routes.SPLASH) {
+    // Screens fade and slide a little (250 ms) when they change.
+    NavHost(
+        navController = nav,
+        startDestination = Routes.SPLASH,
+        enterTransition = { fadeIn(tween(TRANSITION_MILLIS)) + slideInHorizontally(tween(TRANSITION_MILLIS)) { it / 6 } },
+        exitTransition = { fadeOut(tween(TRANSITION_MILLIS)) + slideOutHorizontally(tween(TRANSITION_MILLIS)) { -it / 6 } },
+        popEnterTransition = { fadeIn(tween(TRANSITION_MILLIS)) + slideInHorizontally(tween(TRANSITION_MILLIS)) { -it / 6 } },
+        popExitTransition = { fadeOut(tween(TRANSITION_MILLIS)) + slideOutHorizontally(tween(TRANSITION_MILLIS)) { it / 6 } },
+    ) {
         composable(Routes.SPLASH) {
             SplashScreen(onReady = { nav.navigate(Routes.HOME) { popUpTo(Routes.SPLASH) { inclusive = true } } })
         }

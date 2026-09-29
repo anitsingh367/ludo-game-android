@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -45,6 +46,24 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.foundation.border
+import androidx.compose.ui.graphics.Brush
+import com.example.ludoduel.ui.components.PillView
+import com.example.ludoduel.ui.components.BlueGloss
+import com.example.ludoduel.ui.components.GlossyButton
+import com.example.ludoduel.ui.components.Scrim
+import com.example.ludoduel.ui.components.GameTitle
+import com.example.ludoduel.ui.components.Trophy
+import com.example.ludoduel.ui.components.ConfettiRain
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.Animatable
+import androidx.compose.ui.draw.drawWithContent
+import com.example.ludoduel.ui.components.Pill
+import com.example.ludoduel.ui.components.PillHost
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -66,8 +85,12 @@ import com.example.ludoduel.engine.Phase
 import com.example.ludoduel.engine.PlayerColor
 import com.example.ludoduel.engine.WinReason
 import com.example.ludoduel.engine.YARD
+import com.example.ludoduel.ui.components.Glyph
+import com.example.ludoduel.ui.components.GlyphButton
+import com.example.ludoduel.ui.SettingsSheet
 import com.example.ludoduel.ui.containerViewModel
-import com.example.ludoduel.ui.theme.LocalBoardColors
+import com.example.ludoduel.ui.rememberUiPrefs
+import com.example.ludoduel.ui.theme.LocalLudoPalette
 import kotlinx.coroutines.delay
 
 @Composable
@@ -77,9 +100,9 @@ fun GameScreen(onExit: () -> Unit) {
     val muted by vm.muted.collectAsStateWithLifecycle()
     var confirmLeave by rememberSaveable { mutableStateOf(false) }
     var showRules by rememberSaveable { mutableStateOf(false) }
+    var showSettings by rememberSaveable { mutableStateOf(false) }
 
     GameWindowEffects()
-    SoundEffects(ui.game, muted)
 
     val game = ui.game
     val running = ui.status == GameStatus.READY && game != null && game.state.phase != Phase.OVER && !ui.opponentLeft
@@ -89,7 +112,7 @@ fun GameScreen(onExit: () -> Unit) {
     }
     BackHandler { if (running) confirmLeave = true else exit() }
 
-    Surface(Modifier.fillMaxSize()) {
+    Surface(Modifier.fillMaxSize(), color = Color.Transparent, contentColor = Color.White) {
         when (ui.status) {
             GameStatus.LOADING -> Column(
                 Modifier.fillMaxSize(),
@@ -114,6 +137,7 @@ fun GameScreen(onExit: () -> Unit) {
                     onTokenTap = vm::move,
                     onToggleMute = vm::toggleMute,
                     onRules = { showRules = true },
+                    onSettings = { showSettings = true },
                     onRematch = vm::requestRematch,
                     onHome = exit,
                 )
@@ -136,6 +160,7 @@ fun GameScreen(onExit: () -> Unit) {
         )
     }
     if (showRules) HowToPlaySheet(onDismiss = { showRules = false })
+    if (showSettings) SettingsSheet(onDismiss = { showSettings = false })
 }
 
 @Composable
@@ -149,228 +174,227 @@ private fun GameContent(
     onTokenTap: (Int) -> Unit,
     onToggleMute: () -> Unit,
     onRules: () -> Unit,
+    onSettings: () -> Unit,
     onRematch: () -> Unit,
     onHome: () -> Unit,
 ) {
-    val s = game.state
+    val prefs = rememberUiPrefs()
+    val density = LocalDensity.current
+    val palette = LocalLudoPalette.current
+    val animator = remember(ui.me) { GameAnimator(ui.me, game, density, palette) }
+    animator.fx = LocalGameFx.current
+    animator.texts = AnimatorTexts(
+        plusOneTurn = stringResource(R.string.fx_plus_one_turn),
+        noMoves = stringResource(R.string.fx_no_moves),
+        threeSixes = stringResource(R.string.fx_three_sixes),
+        captured = stringResource(R.string.fx_captured),
+        yourTurn = stringResource(R.string.fx_your_turn),
+        playersTurn = stringResource(R.string.fx_players_turn),
+        ranOutOfTime = stringResource(R.string.game_timeout),
+    )
+    animator.nameOf = { if (it == ui.me) ui.myName else ui.opponentName }
+    LaunchedEffect(animator) { animator.run() }
+    LaunchedEffect(animator, game) { animator.submit(game) }
+
+    // What the screen shows is the animator's state, which may lag the server by an animation.
+    val shown = animator.shown
+    val s = shown.state
     val over = s.phase == Phase.OVER
-    Column(Modifier.fillMaxSize().safeDrawingPadding().padding(horizontal = 12.dp, vertical = 4.dp)) {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text(stringResource(R.string.game_room_code, code), style = MaterialTheme.typography.labelLarge)
-            Spacer(Modifier.weight(1f))
-            val rulesLabel = stringResource(R.string.game_how_to_play)
-            TextButton(onClick = onRules, modifier = Modifier.semantics { contentDescription = rulesLabel }) {
-                Text("?", fontSize = 20.sp, fontWeight = FontWeight.Bold)
-            }
-            val muteLabel = stringResource(if (muted) R.string.game_unmute else R.string.game_mute)
-            TextButton(onClick = onToggleMute, modifier = Modifier.semantics { contentDescription = muteLabel }) {
-                Text(if (muted) "🔇" else "🔊", fontSize = 20.sp)
+    // Input only when every animation has played and the board shows the latest state.
+    val caughtUp = !animator.busy && shown == game
+    val movable = if (caughtUp) ui.movable else emptyList()
+    val canRoll = caughtUp && ui.canRoll
+
+    Box(Modifier.fillMaxSize()) {
+        Column(Modifier.fillMaxSize().safeDrawingPadding()) {
+            TopBar(code, muted, onRules, onToggleMute, onSettings)
+            // Board and both panels share the height; spare space is spread evenly so there are no big gaps.
+            Column(Modifier.weight(1f).fillMaxWidth(), verticalArrangement = Arrangement.SpaceEvenly) {
+                for (color in listOf(ui.me.opponent, ui.me)) {
+                    val isMe = color == ui.me
+                    if (isMe) {
+                        Box(
+                            Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 12.dp)
+                                // Slightly dimmed while we are offline (input is blocked then).
+                                .drawWithContent {
+                                    drawContent()
+                                    if (!ui.connected) drawRect(Color.Black.copy(alpha = 0.3f))
+                                },
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            val colorName = stringResource(if (ui.me == PlayerColor.RED) R.string.game_red else R.string.game_yellow)
+                            LudoBoard(
+                                animator = animator,
+                                movable = movable,
+                                colorblind = prefs.colorblind,
+                                onTokenTap = onTokenTap,
+                                description = stringResource(R.string.board_description, colorName),
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                        }
+                    }
+                    val active = !over && s.turn == color
+                    PlayerPanel(
+                        name = if (isMe) ui.myName else ui.opponentName,
+                        subtitle = stringResource(
+                            when {
+                                isMe -> R.string.game_you_label
+                                color == PlayerColor.RED -> R.string.game_red
+                                else -> R.string.game_yellow
+                            },
+                        ),
+                        color = color,
+                        active = active,
+                        deadline = shown.turnDeadline,
+                        now = now,
+                        mirrored = !isMe,
+                        modifier = Modifier.align(if (isMe) Alignment.Start else Alignment.End).padding(horizontal = 16.dp),
+                    ) {
+                        DiceBox(active = active) {
+                            if (animator.dieOwner == color) {
+                                val die = animator.dice.getValue(color)
+                                val enabled = isMe && canRoll
+                                Die(
+                                    visual = die,
+                                    color = color,
+                                    enabled = enabled,
+                                    description = die.face?.takeIf { !enabled }
+                                        ?.let { stringResource(R.string.game_dice_description, it) }
+                                        ?: stringResource(R.string.game_roll),
+                                    onRoll = {
+                                        animator.startLocalRoll()
+                                        onRoll()
+                                    },
+                                    modifier = Modifier.fillMaxSize(),
+                                )
+                                DieFloater(die)
+                            }
+                        }
+                    }
+                }
             }
         }
-
-        if (!ui.connected) {
-            Banner(stringResource(R.string.game_reconnecting))
-        } else if (!ui.opponentConnected && !over && !ui.opponentLeft) {
-            OpponentOfflineBanner(ui.opponentLastSeen, now)
-        }
-
-        PlayerPanel(
-            name = ui.opponentName,
-            color = ui.me.opponent,
-            isMe = false,
-            isTurn = !over && s.turn == ui.me.opponent,
-            deadline = game.turnDeadline,
-            now = now,
+        if (over) WinOverlay(ui, shown, animator.fx, onRematch, onHome)
+        PillHost(
+            animator.pills,
+            persistent = connectionPill(ui, over, now),
+            modifier = Modifier.align(Alignment.TopCenter).safeDrawingPadding().padding(top = 60.dp),
         )
-        Box(Modifier.weight(1f).fillMaxWidth().padding(vertical = 6.dp), contentAlignment = Alignment.Center) {
-            val colorName = stringResource(if (ui.me == PlayerColor.RED) R.string.game_red else R.string.game_yellow)
-            LudoBoard(
-                game = game,
-                me = ui.me,
-                movable = ui.movable,
-                onTokenTap = onTokenTap,
-                description = stringResource(R.string.board_description, colorName),
-                modifier = Modifier.aspectRatio(1f),
-            )
-            if (over) GameOverCard(ui, game, onRematch, onHome)
-        }
-        PlayerPanel(
-            name = stringResource(R.string.game_you, ui.myName),
-            color = ui.me,
-            isMe = true,
-            isTurn = !over && s.turn == ui.me,
-            deadline = game.turnDeadline,
-            now = now,
-        )
-        Row(
-            Modifier.fillMaxWidth().padding(vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                statusText(ui, game),
-                style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier.weight(1f),
-            )
-            Spacer(Modifier.width(12.dp))
-            // Current roll while choosing a move; otherwise the last value rolled (null before the first roll).
-            val shown = s.dice ?: s.lastAction?.dice
-            DiceButton(
-                value = shown,
-                rolling = ui.rolling,
-                enabled = ui.canRoll,
-                pipColor = LocalBoardColors.current.of(if (ui.rolling) ui.me else s.lastAction?.by ?: s.turn),
-                description = if (ui.canRoll || shown == null) stringResource(R.string.game_roll)
-                else stringResource(R.string.game_dice_description, shown),
-                onRoll = onRoll,
-            )
-        }
     }
 }
 
+/** "+1 turn!" rising from the die and fading. */
 @Composable
-private fun statusText(ui: GameUi, game: RoomGame): String {
-    val s = game.state
-    fun nameOf(color: PlayerColor) = if (color == ui.me) ui.myName else ui.opponentName
-    ui.notice?.let { n ->
-        return when (n.kind) {
-            NoticeKind.NO_MOVE -> stringResource(R.string.game_no_move, nameOf(n.by), checkNotNull(n.dice))
-            NoticeKind.THREE_SIXES -> stringResource(R.string.game_three_sixes, nameOf(n.by))
-            NoticeKind.TIMEOUT -> stringResource(R.string.game_timeout, nameOf(n.by))
-        }
-    }
-    return when {
-        s.phase == Phase.OVER -> ""
-        s.turn != ui.me -> stringResource(R.string.game_opponent_turn, ui.opponentName)
-        s.phase == Phase.ROLL -> stringResource(R.string.game_your_turn_roll)
-        else -> stringResource(R.string.game_your_turn_move, checkNotNull(s.dice))
-    }
-}
-
-@Composable
-private fun PlayerPanel(
-    name: String,
-    color: PlayerColor,
-    isMe: Boolean,
-    isTurn: Boolean,
-    deadline: Long,
-    now: () -> Long,
-) {
-    val colors = LocalBoardColors.current
-    val background = if (isTurn) colors.of(color).copy(alpha = 0.18f) else Color.Transparent
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .background(background, RoundedCornerShape(12.dp))
-            .padding(horizontal = 12.dp, vertical = 6.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) {
-            if (isTurn) CountdownRing(deadline, now, colors.of(color))
-            Canvas(Modifier.size(30.dp)) {
-                drawCircle(colors.of(color))
-                drawCircle(colors.darkOf(color), style = Stroke(size.minDimension * 0.08f))
-            }
-            Text(
-                if (color == PlayerColor.RED) "R" else "Y",
-                color = if (color == PlayerColor.RED) Color.White else colors.yellowDark,
-                fontWeight = FontWeight.Bold,
-            )
-        }
-        Spacer(Modifier.width(12.dp))
-        Column(Modifier.weight(1f)) {
-            Text(name, style = MaterialTheme.typography.titleMedium, fontWeight = if (isMe) FontWeight.Bold else null)
-            Text(
-                stringResource(if (color == PlayerColor.RED) R.string.game_red else R.string.game_yellow),
-                style = MaterialTheme.typography.bodySmall,
-            )
-        }
-    }
-}
-
-/** A ring that empties as the 30-second turn runs out, with the seconds left in the middle. */
-@Composable
-private fun CountdownRing(deadline: Long, now: () -> Long, color: Color) {
-    val remaining by produceState(deadline - now(), deadline) {
-        while (true) {
-            value = deadline - now()
-            delay(200)
-        }
-    }
-    val fraction = (remaining.toFloat() / GameReducer.TURN_MILLIS).coerceIn(0f, 1f)
-    val track = MaterialTheme.colorScheme.outlineVariant
-    Canvas(Modifier.size(48.dp)) {
-        val stroke = size.minDimension * 0.09f
-        val inset = stroke / 2
-        val arcSize = androidx.compose.ui.geometry.Size(size.width - stroke, size.height - stroke)
-        drawArc(track, 0f, 360f, false, Offset(inset, inset), arcSize, style = Stroke(stroke))
-        drawArc(color, -90f, 360f * fraction, false, Offset(inset, inset), arcSize, style = Stroke(stroke))
-    }
-    if (remaining in 0..10_000) {
-        Box(Modifier.size(48.dp), contentAlignment = Alignment.BottomEnd) {
-            Text(
-                ((remaining + 999) / 1000).toString(),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.error,
-                fontWeight = FontWeight.Bold,
-            )
-        }
-    }
-}
-
-@Composable
-private fun Banner(text: String) {
+private fun DieFloater(die: DieVisual) {
+    val progress = die.floater.value
+    if (progress >= 1f) return
     Text(
-        text,
-        color = MaterialTheme.colorScheme.onErrorContainer,
-        textAlign = TextAlign.Center,
+        die.floaterText,
+        color = Color(0xFF3E2723),
+        fontWeight = FontWeight.ExtraBold,
+        fontSize = 14.sp,
+        maxLines = 1,
+        softWrap = false,
         modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 4.dp)
-            .background(MaterialTheme.colorScheme.errorContainer, RoundedCornerShape(8.dp))
-            .padding(8.dp),
+            .wrapContentWidth(unbounded = true)
+            .graphicsLayer {
+                translationY = -(20.dp.toPx() + 46.dp.toPx() * progress)
+                alpha = if (progress < 0.7f) 1f else (1f - progress) / 0.3f
+            }
+            .background(Color(0xFFFFD54F), RoundedCornerShape(50))
+            .padding(horizontal = 10.dp, vertical = 2.dp),
     )
 }
 
+/** Slim top bar: room code on the left, help and sound buttons on the right. */
 @Composable
-private fun OpponentOfflineBanner(lastSeen: Long, now: () -> Long) {
-    val elapsed by produceState(0L, lastSeen) {
+private fun TopBar(code: String, muted: Boolean, onRules: () -> Unit, onToggleMute: () -> Unit, onSettings: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().height(52.dp).padding(horizontal = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Text(
+            stringResource(R.string.game_room_code, code),
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier
+                .background(Color.White.copy(alpha = 0.16f), RoundedCornerShape(50))
+                .padding(horizontal = 14.dp, vertical = 6.dp),
+        )
+        Spacer(Modifier.weight(1f))
+        GlyphButton(Glyph.HELP, stringResource(R.string.game_how_to_play), onRules)
+        GlyphButton(
+            if (muted) Glyph.SOUND_OFF else Glyph.SOUND_ON,
+            stringResource(if (muted) R.string.game_unmute else R.string.game_mute),
+            onToggleMute,
+        )
+        GlyphButton(Glyph.SETTINGS, stringResource(R.string.settings_open), onSettings)
+    }
+}
+
+/**
+ * The compact pill that stays up while a connection is down: mine ("Reconnecting…") or the
+ * opponent's, with the time since they dropped.
+ */
+@Composable
+private fun connectionPill(ui: GameUi, over: Boolean, now: () -> Long): Pill? {
+    val amber = LocalLudoPalette.current.amber
+    if (!ui.connected) return Pill(stringResource(R.string.game_reconnecting), amber, spinner = true)
+    if (ui.opponentConnected || over || ui.opponentLeft) return null
+    val elapsed by produceState(0L, ui.opponentLastSeen) {
         while (true) {
-            value = (now() - lastSeen).coerceAtLeast(0)
+            value = (now() - ui.opponentLastSeen).coerceAtLeast(0)
             delay(1_000)
         }
     }
     val seconds = elapsed / 1000
-    val mmss = "%02d:%02d".format(seconds / 60, seconds % 60)
-    Banner(stringResource(R.string.game_opponent_offline, mmss))
+    return Pill(stringResource(R.string.game_opponent_offline, "%d:%02d".format(seconds / 60, seconds % 60)), amber, spinner = true)
 }
 
+/**
+ * Game over. The winner gets a trophy with a crown, confetti rain and a victory sound; the loser a
+ * gentler "Good game!". Both see the reason, the rematch state and the Rematch / Home buttons.
+ */
 @Composable
-private fun GameOverCard(ui: GameUi, game: RoomGame, onRematch: () -> Unit, onHome: () -> Unit) {
+private fun WinOverlay(ui: GameUi, game: RoomGame, fx: GameFx, onRematch: () -> Unit, onHome: () -> Unit) {
     val s = game.state
     val winner = checkNotNull(s.winner)
-    val winnerName = if (winner == ui.me) ui.myName else ui.opponentName
-    val loserName = if (winner == ui.me) ui.opponentName else ui.myName
-    Card(
-        Modifier.padding(24.dp).fillMaxWidth(),
-        elevation = CardDefaults.cardElevation(8.dp),
-    ) {
+    val iWon = winner == ui.me
+    val winnerName = if (iWon) ui.myName else ui.opponentName
+    val loserName = if (iWon) ui.opponentName else ui.myName
+    val appear = remember(game) { Animatable(0f) }
+    LaunchedEffect(game) {
+        fx.play(if (iWon) Sfx.WIN else Sfx.LOSE)
+        appear.animateTo(1f, spring(dampingRatio = 0.55f, stiffness = Spring.StiffnessLow))
+    }
+    Scrim {
+        if (iWon) ConfettiRain(Modifier.fillMaxSize())
         Column(
-            Modifier.padding(20.dp).verticalScroll(rememberScrollState()),
+            Modifier
+                .padding(24.dp)
+                .graphicsLayer {
+                    scaleX = 0.7f + 0.3f * appear.value
+                    scaleY = 0.7f + 0.3f * appear.value
+                    alpha = appear.value.coerceIn(0f, 1f)
+                }
+                .verticalScroll(rememberScrollState()),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(10.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            Text(
-                stringResource(if (winner == ui.me) R.string.over_you_won else R.string.over_you_lost),
-                style = MaterialTheme.typography.headlineMedium,
-                fontWeight = FontWeight.Bold,
-            )
+            Trophy(Modifier.size(if (iWon) 170.dp else 120.dp).graphicsLayer { alpha = if (iWon) 1f else 0.75f })
+            GameTitle(stringResource(if (iWon) R.string.over_you_won else R.string.over_good_game), fontSize = 44)
+            WinnerChip(winnerName, winner)
             Text(
                 when (checkNotNull(s.winReason)) {
                     WinReason.ALL_HOME -> stringResource(R.string.over_reason_all_home, winnerName)
                     WinReason.FORFEIT -> stringResource(R.string.over_reason_forfeit, loserName)
                     WinReason.LEFT -> stringResource(R.string.over_reason_left, loserName)
                 },
+                color = Color.White.copy(alpha = 0.9f),
                 textAlign = TextAlign.Center,
+                style = MaterialTheme.typography.titleMedium,
             )
             val rematchNote = when {
                 ui.opponentLeft -> stringResource(R.string.over_opponent_left)
@@ -378,15 +402,41 @@ private fun GameOverCard(ui: GameUi, game: RoomGame, onRematch: () -> Unit, onHo
                 ui.opponentWantsRematch -> stringResource(R.string.over_rematch_offered, ui.opponentName)
                 else -> null
             }
-            rematchNote?.let { Text(it, style = MaterialTheme.typography.titleSmall, textAlign = TextAlign.Center) }
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                OutlinedButton(onClick = onHome) { Text(stringResource(R.string.over_home)) }
-                Button(
-                    onClick = onRematch,
-                    enabled = ui.connected && !ui.opponentLeft && !ui.iWantRematch,
-                ) { Text(stringResource(R.string.over_rematch)) }
-            }
+            rematchNote?.let { PillView(Pill(it, LocalLudoPalette.current.amber)) }
+            GlossyButton(
+                text = stringResource(R.string.over_rematch),
+                onClick = onRematch,
+                enabled = ui.connected && !ui.opponentLeft && !ui.iWantRematch,
+                modifier = Modifier.fillMaxWidth(0.8f),
+            )
+            GlossyButton(
+                text = stringResource(R.string.over_home),
+                onClick = onHome,
+                colors = BlueGloss,
+                height = 52.dp,
+                modifier = Modifier.fillMaxWidth(0.8f),
+            )
         }
+    }
+}
+
+/** The winner's name next to a pawn in their color. */
+@Composable
+private fun WinnerChip(name: String, color: PlayerColor) {
+    val colors = LocalLudoPalette.current.of(color)
+    val measurer = rememberTextMeasurer()
+    Row(
+        Modifier
+            .background(Brush.horizontalGradient(listOf(colors.main, colors.dark)), RoundedCornerShape(50))
+            .border(2.dp, Color.White.copy(alpha = 0.7f), RoundedCornerShape(50))
+            .padding(horizontal = 16.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Canvas(Modifier.size(22.dp, 30.dp)) {
+            drawPawn(Offset(size.width / 2, size.height * 0.58f), size.width * 1.3f, colors, PawnLook(), null, measurer)
+        }
+        Text(name, color = Color.White, fontWeight = FontWeight.ExtraBold, fontSize = 20.sp)
     }
 }
 
@@ -431,34 +481,6 @@ private fun GameWindowEffects() {
         onDispose {
             activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
             view.keepScreenOn = false
-        }
-    }
-}
-
-/** Plays a sound and vibrates for rolls, captures and tokens reaching home (only for the next version, never replays). */
-@Composable
-private fun SoundEffects(game: RoomGame?, muted: Boolean) {
-    val feedback = rememberFeedback()
-    val previous = remember { arrayOfNulls<RoomGame>(1) }
-    val currentMuted by rememberUpdatedState(muted)
-    LaunchedEffect(game) {
-        val prev = previous[0]
-        previous[0] = game
-        if (game == null || prev == null || currentMuted || game.version != prev.version + 1) return@LaunchedEffect
-        val last = game.state.lastAction ?: return@LaunchedEffect
-        when (last.type) {
-            ActionType.ROLL -> feedback.roll()
-            ActionType.MOVE -> {
-                val from = checkNotNull(last.from)
-                val to = checkNotNull(last.to)
-                val special = last.captured != null || to == HOME
-                if (special) {
-                    // Wait for the step-by-step animation to reach the square.
-                    delay(120L * (if (from == YARD) 1 else to - from))
-                    if (last.captured != null) feedback.capture() else feedback.home()
-                }
-            }
-            ActionType.TIMEOUT, ActionType.LEFT -> Unit
         }
     }
 }

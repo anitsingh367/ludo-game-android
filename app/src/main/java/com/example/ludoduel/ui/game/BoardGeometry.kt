@@ -5,8 +5,11 @@ import com.example.ludoduel.engine.HOME
 import com.example.ludoduel.engine.LAST_TRACK
 import com.example.ludoduel.engine.LudoEngine
 import com.example.ludoduel.engine.PlayerColor
+import com.example.ludoduel.engine.SAFE_SQUARES
 import com.example.ludoduel.engine.TOKENS_PER_PLAYER
 import com.example.ludoduel.engine.YARD
+import com.example.ludoduel.ui.theme.Seat
+import com.example.ludoduel.ui.theme.seat
 
 data class Cell(val col: Int, val row: Int)
 
@@ -43,11 +46,43 @@ object BoardGeometry {
         add(Cell(6, 14))                             // 51
     }
 
-    /** Home column square for progress 51..55. */
-    fun homeColumnCell(color: PlayerColor, progress: Int): Cell {
-        val step = progress - (LAST_TRACK + 1)
-        return if (color == PlayerColor.RED) Cell(7, 13 - step) else Cell(7, 1 + step)
+    /** Top-left cell of each 6x6 yard, in Red's view. Clockwise order: Red, Green, Yellow, Blue. */
+    fun yardOrigin(seat: Seat): Cell = when (seat) {
+        Seat.RED -> Cell(0, 9)
+        Seat.GREEN -> Cell(0, 0)
+        Seat.YELLOW -> Cell(9, 0)
+        Seat.BLUE -> Cell(9, 9)
     }
+
+    /** Absolute track index of each seat's start square. */
+    fun startIndex(seat: Seat): Int = seat.ordinal * 13
+
+    /** The five home-column squares of a seat, from the entry to the center. */
+    fun homeColumn(seat: Seat): List<Cell> = (0 until 5).map { i ->
+        when (seat) {
+            Seat.RED -> Cell(7, 13 - i)
+            Seat.GREEN -> Cell(1 + i, 7)
+            Seat.YELLOW -> Cell(7, 1 + i)
+            Seat.BLUE -> Cell(13 - i, 7)
+        }
+    }
+
+    /** Safe squares that are not start squares (they get a star; start squares get an arrow). */
+    val starSquares: List<Int> = SAFE_SQUARES.filter { it % 13 != 0 }.sorted()
+
+    /**
+     * The corner points of each seat's center triangle (two outer corners on the center square's
+     * edge next to its home column), in Red's view. The third point is the board center.
+     */
+    fun centerTriangle(seat: Seat): Pair<GridPoint, GridPoint> = when (seat) {
+        Seat.RED -> GridPoint(6f, 9f) to GridPoint(9f, 9f)
+        Seat.GREEN -> GridPoint(6f, 6f) to GridPoint(6f, 9f)
+        Seat.YELLOW -> GridPoint(6f, 6f) to GridPoint(9f, 6f)
+        Seat.BLUE -> GridPoint(9f, 6f) to GridPoint(9f, 9f)
+    }
+
+    /** Home column square for progress 51..55. */
+    fun homeColumnCell(color: PlayerColor, progress: Int): Cell = homeColumn(color.seat())[progress - (LAST_TRACK + 1)]
 
     fun cellOf(color: PlayerColor, progress: Int): Cell? = when (progress) {
         in 0..LAST_TRACK -> track[LudoEngine.absoluteSquare(color, progress)]
@@ -84,40 +119,40 @@ object BoardGeometry {
         if (from == YARD) listOf(point(color, index, to))
         else (from + 1..to).map { point(color, index, it) }
 
-    /** Final draw position of every token in the viewer's orientation, spreading out shared squares. */
+    /** Size of each token when two or more share a square. */
+    const val STACK_SCALE = 0.7f
+
+    /**
+     * Final draw position of every token in the viewer's orientation. Tokens sharing a square are
+     * shrunk and fanned out diagonally so each one stays visible. Finished tokens all sit on their
+     * color's finish spot (the board shows one pawn there with a counter).
+     */
     fun layout(state: GameState, viewer: PlayerColor): Map<TokenKey, TokenSpot> {
-        val base = PlayerColor.entries.flatMap { color ->
-            (0 until TOKENS_PER_PLAYER).map { i ->
-                TokenKey(color, i) to forViewer(point(color, i, state.tokensOf(color)[i]), viewer)
+        val result = mutableMapOf<TokenKey, TokenSpot>()
+        val onBoard = mutableListOf<Pair<TokenKey, GridPoint>>()
+        for (color in PlayerColor.entries) {
+            for (i in 0 until TOKENS_PER_PLAYER) {
+                val progress = state.tokensOf(color)[i]
+                val key = TokenKey(color, i)
+                val p = forViewer(point(color, i, progress), viewer)
+                if (progress == HOME) result[key] = TokenSpot(p, FINISHED_SCALE) else onBoard += key to p
             }
         }
-        val result = mutableMapOf<TokenKey, TokenSpot>()
-        base.groupBy({ it.second }, { it.first }).forEach { (point, keys) ->
-            val scale = when {
-                keys.size == 1 -> 1f
-                keys.size <= 4 -> 0.62f
-                else -> 0.5f
-            }
-            keys.forEachIndexed { i, key ->
-                val (dx, dy) = stackOffset(keys.size, i)
-                result[key] = TokenSpot(GridPoint(point.x + dx, point.y + dy), scale)
+        onBoard.groupBy({ it.second }, { it.first }).forEach { (point, keys) ->
+            val n = keys.size
+            // Red before Yellow and lower index first, so the fan order never jumps around.
+            keys.sortedWith(compareBy({ it.color }, { it.index })).forEachIndexed { i, key ->
+                if (n == 1) {
+                    result[key] = TokenSpot(point, 1f)
+                } else {
+                    val step = minOf(0.3f, 0.75f / (n - 1))
+                    val t = i - (n - 1) / 2f
+                    result[key] = TokenSpot(GridPoint(point.x + t * step, point.y + t * step * 0.45f), STACK_SCALE)
+                }
             }
         }
         return result
     }
 
-    /**
-     * Offset of the [i]-th of [n] tokens on one square. Up to 4 use the corners; more (only
-     * possible on a safe square shared by both colors, at most 8) use a 3x3 grid.
-     */
-    private fun stackOffset(n: Int, i: Int): Pair<Float, Float> {
-        val d = 0.2f
-        return when (n) {
-            1 -> 0f to 0f
-            2 -> (if (i == 0) -d else d) to 0f
-            3 -> listOf(-d to -d, d to -d, 0f to d)[i]
-            4 -> (if (i % 2 == 0) -d else d) to (if (i < 2) -d else d)
-            else -> ((i % 3) - 1) * d to ((i / 3) - 1) * d
-        }
-    }
+    private const val FINISHED_SCALE = 0.62f
 }

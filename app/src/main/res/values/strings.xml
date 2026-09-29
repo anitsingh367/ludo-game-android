@@ -13,8 +13,8 @@
     <string name="home_subtitle">Classic Ludo for two, in private rooms</string>
     <string name="home_name_label">Your name</string>
     <string name="home_name_error">Use 2 to 16 characters</string>
-    <string name="home_create">Create room</string>
-    <string name="home_join">Join room</string>
+    <string name="home_create">Create Room</string>
+    <string name="home_join">Join Room</string>
     <string name="home_rejoin_title">Game in progress</string>
     <string name="home_rejoin_body">You were playing in room %1$s. Rejoin game?</string>
     <string name="home_rejoin">Rejoin game</string>
@@ -50,17 +50,18 @@
     <string name="game_how_to_play">How to play</string>
     <string name="game_mute">Mute sound and vibration</string>
     <string name="game_unmute">Turn on sound and vibration</string>
-    <string name="game_reconnecting">Reconnecting… Moves are paused.</string>
-    <string name="game_opponent_offline">Opponent disconnected — waiting (%1$s)</string>
-    <string name="game_you">%1$s (you)</string>
+    <string name="game_reconnecting">Reconnecting…</string>
+    <string name="game_opponent_offline">Opponent reconnecting… %1$s</string>
+    <string name="game_you_label">You</string>
     <string name="game_red">Red</string>
     <string name="game_yellow">Yellow</string>
-    <string name="game_your_turn_roll">Your turn — tap the dice</string>
-    <string name="game_your_turn_move">Tap a glowing token to move %1$d</string>
-    <string name="game_opponent_turn">%1$s\'s turn</string>
-    <string name="game_no_move">%1$s rolled %2$d — no move possible</string>
-    <string name="game_three_sixes">%1$s rolled three 6s — turn lost</string>
     <string name="game_timeout">%1$s ran out of time</string>
+    <string name="fx_plus_one_turn">+1 turn!</string>
+    <string name="fx_no_moves">No moves</string>
+    <string name="fx_three_sixes">3 sixes — turn lost</string>
+    <string name="fx_captured">Captured! +1 turn</string>
+    <string name="fx_your_turn">Your turn!</string>
+    <string name="fx_players_turn">%1$s\'s turn</string>
     <string name="game_roll">Roll</string>
     <string name="game_dice_description">Dice showing %1$d</string>
     <string name="game_loading">Loading game…</string>
@@ -76,7 +77,7 @@
 
     <!-- Game over -->
     <string name="over_you_won">You won!</string>
-    <string name="over_you_lost">You lost</string>
+    <string name="over_good_game">Good game!</string>
     <string name="over_reason_all_home">%1$s brought all four tokens home.</string>
     <string name="over_reason_forfeit">%1$s missed 3 turns in a row.</string>
     <string name="over_reason_left">%1$s left the game.</string>
@@ -85,6 +86,14 @@
     <string name="over_rematch_offered">%1$s wants a rematch!</string>
     <string name="over_opponent_left">Opponent left</string>
     <string name="over_home">Home</string>
+
+    <!-- Settings -->
+    <string name="settings_title">Settings</string>
+    <string name="settings_open">Settings</string>
+    <string name="settings_sound">Sound</string>
+    <string name="settings_vibration">Vibration</string>
+    <string name="settings_colorblind">Colorblind mode</string>
+    <string name="settings_colorblind_hint">Shows a letter on every token (R or Y)</string>
 
     <!-- How to play -->
     <string name="rules_title">How to play</string>

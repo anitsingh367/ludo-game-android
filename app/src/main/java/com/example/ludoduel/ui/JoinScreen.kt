@@ -32,6 +32,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextAlign
+import com.example.ludoduel.ui.components.GreenGloss
+import com.example.ludoduel.ui.components.GlossyButton
+import androidx.compose.ui.draw.shadow
+import androidx.compose.foundation.background
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -138,51 +145,65 @@ fun JoinScreen(onOpenGame: (String) -> Unit, onOpenWaiting: (String) -> Unit, on
     }
     BackHandler(onBack = onBack)
     val focus = remember { FocusRequester() }
-    LaunchedEffect(Unit) { focus.requestFocus() }
+    val keyboard = LocalSoftwareKeyboardController.current
+    LaunchedEffect(Unit) {
+        focus.requestFocus()
+        keyboard?.show()
+    }
 
-    Surface(Modifier.fillMaxSize()) {
-        Column(
-            Modifier.safeDrawingPadding().padding(24.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterVertically),
-        ) {
-            Text(stringResource(R.string.join_title), style = MaterialTheme.typography.headlineSmall)
-            Text(stringResource(R.string.join_hint))
-            val fieldLabel = stringResource(R.string.join_code_field)
-            BasicTextField(
-                state = vm.codeField,
-                inputTransformation = RoomCodeInput,
-                lineLimits = TextFieldLineLimits.SingleLine,
-                enabled = !ui.busy,
-                keyboardOptions = KeyboardOptions(
-                    capitalization = KeyboardCapitalization.Characters,
-                    autoCorrectEnabled = false,
-                    keyboardType = KeyboardType.Ascii,
-                    imeAction = ImeAction.Go,
-                ),
-                onKeyboardAction = { vm.join() },
-                modifier = Modifier.focusRequester(focus).semantics { contentDescription = fieldLabel },
-                decorator = { innerTextField ->
-                    Box {
-                        CodeBoxes(ui.code, hasError = ui.error != null)
-                        // The real text field is invisible; the boxes above show the code.
-                        Box(Modifier.matchParentSize().alpha(0f)) { innerTextField() }
-                    }
-                },
-            )
-            ui.error?.let { Text(stringResource(it), color = MaterialTheme.colorScheme.error) }
-            Button(
-                onClick = vm::join,
-                enabled = !ui.busy && ui.code.length == RoomCodes.LENGTH,
-                modifier = Modifier.fillMaxWidth().height(52.dp),
-            ) {
-                if (ui.busy) {
-                    CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
-                } else {
-                    Text(stringResource(R.string.join_button))
+    Column(
+        Modifier.fillMaxSize().safeDrawingPadding().padding(24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(18.dp, Alignment.CenterVertically),
+    ) {
+        Text(stringResource(R.string.join_title), style = MaterialTheme.typography.headlineMedium, color = Color.White)
+        Text(stringResource(R.string.join_hint), color = Color.White.copy(alpha = 0.9f), textAlign = TextAlign.Center)
+        val fieldLabel = stringResource(R.string.join_code_field)
+        BasicTextField(
+            state = vm.codeField,
+            inputTransformation = RoomCodeInput,
+            lineLimits = TextFieldLineLimits.SingleLine,
+            enabled = !ui.busy,
+            keyboardOptions = KeyboardOptions(
+                capitalization = KeyboardCapitalization.Characters,
+                autoCorrectEnabled = false,
+                keyboardType = KeyboardType.Ascii,
+                imeAction = ImeAction.Go,
+            ),
+            onKeyboardAction = { vm.join() },
+            modifier = Modifier.focusRequester(focus).semantics { contentDescription = fieldLabel },
+            decorator = { innerTextField ->
+                Box {
+                    CodeBoxes(ui.code, hasError = ui.error != null)
+                    // The real text field is invisible; the boxes above show the code.
+                    Box(Modifier.matchParentSize().alpha(0f)) { innerTextField() }
                 }
-            }
-            TextButton(onClick = onBack) { Text(stringResource(R.string.back)) }
+            },
+        )
+        ui.error?.let {
+            Text(
+                stringResource(it),
+                color = Color.White,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier
+                    .background(Color(0xFFD32F2F), RoundedCornerShape(50))
+                    .padding(horizontal = 16.dp, vertical = 6.dp),
+            )
+        }
+        GlossyButton(
+            text = stringResource(R.string.join_button),
+            onClick = vm::join,
+            enabled = !ui.busy && ui.code.length == RoomCodes.LENGTH,
+            colors = GreenGloss,
+            modifier = Modifier.fillMaxWidth(),
+            content = if (ui.busy) {
+                { CircularProgressIndicator(Modifier.size(26.dp), color = Color.White, strokeWidth = 3.dp) }
+            } else {
+                null
+            },
+        )
+        TextButton(onClick = onBack) {
+            Text(stringResource(R.string.back), color = Color.White.copy(alpha = 0.85f), style = MaterialTheme.typography.titleMedium)
         }
     }
 }
@@ -193,21 +214,23 @@ private fun CodeBoxes(code: String, hasError: Boolean) {
         repeat(RoomCodes.LENGTH) { i ->
             val active = i == code.length
             val borderColor = when {
-                hasError -> MaterialTheme.colorScheme.error
-                active -> MaterialTheme.colorScheme.primary
-                else -> MaterialTheme.colorScheme.outline
+                hasError -> Color(0xFFFF5252)
+                active -> Color(0xFFFFC107)
+                else -> Color.Transparent
             }
             Box(
                 Modifier
-                    .size(width = 44.dp, height = 56.dp)
-                    .border(if (active) 2.dp else 1.dp, borderColor, RoundedCornerShape(8.dp)),
+                    .size(width = 46.dp, height = 58.dp)
+                    .shadow(6.dp, RoundedCornerShape(12.dp))
+                    .background(Color.White, RoundedCornerShape(12.dp))
+                    .border(3.dp, borderColor, RoundedCornerShape(12.dp)),
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
                     code.getOrNull(i)?.toString() ?: "",
-                    fontSize = 26.sp,
-                    fontFamily = FontFamily.Monospace,
-                    fontWeight = FontWeight.Bold,
+                    color = Color(0xFF311B92),
+                    fontSize = 30.sp,
+                    fontWeight = FontWeight.ExtraBold,
                 )
             }
         }

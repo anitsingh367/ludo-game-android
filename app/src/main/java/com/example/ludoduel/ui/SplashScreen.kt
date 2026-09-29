@@ -16,6 +16,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -25,6 +26,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import com.example.ludoduel.AppContainer
 import com.example.ludoduel.R
+import com.example.ludoduel.ui.components.GameTitle
 import com.google.firebase.database.DatabaseException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -70,17 +72,13 @@ fun SplashScreen(onReady: () -> Unit) {
     val state by vm.state.collectAsStateWithLifecycle()
     LaunchedEffect(state) { if (state == SplashState.READY) onReady() }
 
-    Surface(Modifier.fillMaxSize()) {
+    Surface(Modifier.fillMaxSize(), color = Color.Transparent, contentColor = Color.White) {
         Column(
             Modifier.padding(32.dp),
             verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Text(
-                stringResource(R.string.app_name),
-                style = MaterialTheme.typography.displaySmall,
-                fontWeight = FontWeight.Bold,
-            )
+            GameTitle(stringResource(R.string.app_name))
             Spacer(Modifier.height(24.dp))
             val message = when (state) {
                 SplashState.LOADING, SplashState.READY -> null

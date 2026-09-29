@@ -1,58 +1,213 @@
 package com.example.ludoduel.ui.theme
 
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.Box
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.text.font.Font
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontVariation
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import com.example.ludoduel.R
 import com.example.ludoduel.engine.PlayerColor
+import kotlin.math.PI
+import kotlin.math.cos
+import kotlin.math.sin
 
-/** Colors used to draw the board and tokens, per light/dark theme. */
+/** The four board colors. Only Red and Yellow play; Green and Blue are drawn so the board looks complete. */
+enum class Seat { RED, GREEN, YELLOW, BLUE }
+
+fun PlayerColor.seat(): Seat = if (this == PlayerColor.RED) Seat.RED else Seat.YELLOW
+
+/** One board color: the main color, a darker shade for outlines/shadows and a light tint for yard slots. */
 @Immutable
-data class BoardColors(
-    val red: Color,
-    val redDark: Color,
-    val yellow: Color,
-    val yellowDark: Color,
-    val neutral: Color,
-    val cell: Color,
-    val grid: Color,
-    val board: Color,
-    val star: Color,
-    val glow: Color,
+data class SeatColors(val main: Color, val dark: Color, val light: Color)
+
+/** Colors used to draw the board, tokens and panels. Bright in both light and dark mode. */
+@Immutable
+data class LudoPalette(
+    val red: SeatColors,
+    val green: SeatColors,
+    val yellow: SeatColors,
+    val blue: SeatColors,
+    val track: Color,
+    val trackLine: Color,
+    val frameLight: Color,
+    val frameDark: Color,
+    val gold: Color,
+    val backgroundTop: Color,
+    val backgroundBottom: Color,
+    val amber: Color,
 ) {
-    fun of(color: PlayerColor) = if (color == PlayerColor.RED) red else yellow
-    fun darkOf(color: PlayerColor) = if (color == PlayerColor.RED) redDark else yellowDark
+    fun of(seat: Seat): SeatColors = when (seat) {
+        Seat.RED -> red
+        Seat.GREEN -> green
+        Seat.YELLOW -> yellow
+        Seat.BLUE -> blue
+    }
+
+    fun of(color: PlayerColor): SeatColors = of(color.seat())
 }
 
-private val LightBoard = BoardColors(
-    red = Color(0xFFD32F2F), redDark = Color(0xFF8E1B1B),
-    yellow = Color(0xFFF9B90F), yellowDark = Color(0xFF8A6100),
-    neutral = Color(0xFFCFD2D6), cell = Color.White, grid = Color(0xFF9EA3A8),
-    board = Color(0xFFF1EFEA), star = Color(0xFF7A7F85), glow = Color(0xFF1565C0),
+private val Red = SeatColors(Color(0xFFE53935), Color(0xFF9E1B17), Color(0xFFFFCDD2))
+private val Green = SeatColors(Color(0xFF43A047), Color(0xFF1B5E20), Color(0xFFC8E6C9))
+private val Yellow = SeatColors(Color(0xFFFDD835), Color(0xFFB08A00), Color(0xFFFFF59D))
+private val Blue = SeatColors(Color(0xFF1E88E5), Color(0xFF0D47A1), Color(0xFFBBDEFB))
+
+private val LightPalette = LudoPalette(
+    red = Red, green = Green, yellow = Yellow, blue = Blue,
+    track = Color.White, trackLine = Color(0xFFD5D8DC),
+    frameLight = Color(0xFFF3C969), frameDark = Color(0xFFA86B22), gold = Color(0xFFFFC107),
+    backgroundTop = Color(0xFF3F51B5), backgroundBottom = Color(0xFF7B1FA2),
+    amber = Color(0xFFEF7C00),
 )
 
-private val DarkBoard = BoardColors(
-    red = Color(0xFFE57373), redDark = Color(0xFF7F1D1D),
-    yellow = Color(0xFFFFD54F), yellowDark = Color(0xFF7A5A00),
-    neutral = Color(0xFF3C4046), cell = Color(0xFF24272B), grid = Color(0xFF5B6168),
-    board = Color(0xFF1A1C1F), star = Color(0xFFA7ADB4), glow = Color(0xFF90CAF9),
+/** Dark mode keeps the bright board and uses a deeper background. */
+private val DarkPalette = LightPalette.copy(
+    backgroundTop = Color(0xFF1A237E), backgroundBottom = Color(0xFF4A148C),
 )
 
-val LocalBoardColors = staticCompositionLocalOf { LightBoard }
+val LocalLudoPalette = staticCompositionLocalOf { LightPalette }
+
+/** Baloo 2, a rounded playful font (SIL Open Font License, see ASSETS.md), bundled as one variable font. */
+val Baloo = FontFamily(
+    listOf(400, 500, 600, 700, 800).map { w ->
+        Font(R.font.baloo2, FontWeight(w), variationSettings = FontVariation.Settings(FontVariation.weight(w)))
+    }
+)
+
+private val BalooTypography: Typography = Typography().run {
+    Typography(
+        displayLarge = displayLarge.copy(fontFamily = Baloo, fontWeight = FontWeight.ExtraBold),
+        displayMedium = displayMedium.copy(fontFamily = Baloo, fontWeight = FontWeight.ExtraBold),
+        displaySmall = displaySmall.copy(fontFamily = Baloo, fontWeight = FontWeight.ExtraBold),
+        headlineLarge = headlineLarge.copy(fontFamily = Baloo, fontWeight = FontWeight.Bold),
+        headlineMedium = headlineMedium.copy(fontFamily = Baloo, fontWeight = FontWeight.Bold),
+        headlineSmall = headlineSmall.copy(fontFamily = Baloo, fontWeight = FontWeight.Bold),
+        titleLarge = titleLarge.copy(fontFamily = Baloo, fontWeight = FontWeight.Bold),
+        titleMedium = titleMedium.copy(fontFamily = Baloo, fontWeight = FontWeight.Bold),
+        titleSmall = titleSmall.copy(fontFamily = Baloo, fontWeight = FontWeight.SemiBold),
+        bodyLarge = bodyLarge.copy(fontFamily = Baloo, fontWeight = FontWeight.Medium),
+        bodyMedium = bodyMedium.copy(fontFamily = Baloo, fontWeight = FontWeight.Medium),
+        bodySmall = bodySmall.copy(fontFamily = Baloo, fontWeight = FontWeight.Medium),
+        labelLarge = labelLarge.copy(fontFamily = Baloo, fontWeight = FontWeight.Bold),
+        labelMedium = labelMedium.copy(fontFamily = Baloo, fontWeight = FontWeight.SemiBold),
+        labelSmall = labelSmall.copy(fontFamily = Baloo, fontWeight = FontWeight.SemiBold),
+    )
+}
 
 @Composable
 fun LudoTheme(content: @Composable () -> Unit) {
     val dark = isSystemInDarkTheme()
+    // Sheets and dialogs use Material surfaces; the screens themselves sit on the gradient background.
     val scheme = if (dark) {
-        darkColorScheme(primary = Color(0xFFEF9A9A), secondary = Color(0xFFFFD54F))
+        darkColorScheme(primary = Color(0xFFFFCA28), onPrimary = Color(0xFF3E2723), secondary = Color(0xFF80DEEA))
     } else {
-        lightColorScheme(primary = Color(0xFFC62828), secondary = Color(0xFFF9A825))
+        lightColorScheme(primary = Color(0xFF5E35B1), secondary = Color(0xFFFFB300))
     }
-    androidx.compose.runtime.CompositionLocalProvider(LocalBoardColors provides if (dark) DarkBoard else LightBoard) {
-        MaterialTheme(colorScheme = scheme, content = content)
+    CompositionLocalProvider(LocalLudoPalette provides if (dark) DarkPalette else LightPalette) {
+        MaterialTheme(colorScheme = scheme, typography = BalooTypography, content = content)
     }
 }
+
+/**
+ * The game background: a vertical royal-blue to purple gradient with a faint (6%) pattern of dice,
+ * stars and diamonds. Content on top is white by default.
+ *
+ * The background has its own graphics layer and its shapes are built once, so it is never redrawn
+ * when something on top of it animates.
+ */
+@Composable
+fun LudoBackground(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
+    val palette = LocalLudoPalette.current
+    Box(modifier) {
+        Box(
+            Modifier
+                .matchParentSize()
+                .graphicsLayer()
+                .drawWithCache {
+                    val gradient = Brush.verticalGradient(listOf(palette.backgroundTop, palette.backgroundBottom))
+                    val pattern = buildPattern(size, 64.dp.toPx())
+                    val color = Color.White.copy(alpha = 0.06f)
+                    onDrawBehind {
+                        drawRect(gradient)
+                        drawPath(pattern.filled, color)
+                        drawPath(pattern.outlined, color, style = Stroke(pattern.stroke))
+                    }
+                },
+        )
+        CompositionLocalProvider(LocalContentColor provides Color.White) { content() }
+    }
+}
+
+private class Pattern(val filled: Path, val outlined: Path, val stroke: Float)
+
+/** A staggered grid of small dice, stars and diamonds, built as two paths. */
+private fun buildPattern(size: Size, step: Float): Pattern {
+    val filled = Path()
+    val outlined = Path()
+    val cols = (size.width / step).toInt() + 2
+    val rows = (size.height / step).toInt() + 2
+    val half = step * 0.22f
+    for (r in 0 until rows) {
+        for (c in 0 until cols) {
+            val center = Offset(c * step + if (r % 2 == 0) 0f else step / 2, r * step)
+            when ((r * 7 + c * 3) % 3) {
+                0 -> {
+                    // A die: rounded outline with three pips.
+                    outlined.addRoundRect(
+                        androidx.compose.ui.geometry.RoundRect(
+                            center.x - half, center.y - half, center.x + half, center.y + half,
+                            CornerRadius(half * 0.35f),
+                        ),
+                    )
+                    for (k in -1..1) {
+                        filled.addOval(androidx.compose.ui.geometry.Rect(center + Offset(k * half * 0.5f, k * half * 0.5f), half * 0.16f))
+                    }
+                }
+                1 -> filled.addPath(starPath(center, step * 0.16f))
+                else -> {
+                    val d = step * 0.12f
+                    filled.moveTo(center.x, center.y - d)
+                    filled.lineTo(center.x + d * 0.7f, center.y)
+                    filled.lineTo(center.x, center.y + d)
+                    filled.lineTo(center.x - d * 0.7f, center.y)
+                    filled.close()
+                }
+            }
+        }
+    }
+    return Pattern(filled, outlined, half * 0.18f)
+}
+
+/** A five-pointed star centered on [center]. */
+fun starPath(center: Offset, radius: Float, innerRatio: Float = 0.45f): Path = Path().apply {
+    for (i in 0 until 10) {
+        val r = if (i % 2 == 0) radius else radius * innerRatio
+        val angle = -PI / 2 + i * PI / 5
+        val x = center.x + (r * cos(angle)).toFloat()
+        val y = center.y + (r * sin(angle)).toFloat()
+        if (i == 0) moveTo(x, y) else lineTo(x, y)
+    }
+    close()
+}
+

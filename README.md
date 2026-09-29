@@ -12,7 +12,11 @@ Firebase Realtime Database. No Cloud Functions, so it runs on the free Spark pla
 - `database.rules.json` – Realtime Database security rules. `firebase.json` – for deploying them.
 - `rules-tests/` – tests for the security rules, run against the Firebase emulator.
 - `emulator/google-services.json` – placeholder config, only for trying the app with local emulators.
-- `DECISIONS.md` – every assumption made, and where each edge case is handled.
+- `DECISIONS.md` – every assumption made, where each edge case is handled, and the visual redesign.
+- `ASSETS.md` – where the font and sounds come from and their licenses (`tools/generate_sounds.py` makes the sounds).
+
+The gear button (on Home and in the game) opens the settings: sound, vibration and colorblind mode
+(a letter on every token).
 
 ## Important: the build and `google-services.json`
 
