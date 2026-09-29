@@ -18,10 +18,12 @@ import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import com.example.ludoduel.data.RoomGame
 import com.example.ludoduel.engine.ActionType
+import com.example.ludoduel.engine.Dice
 import com.example.ludoduel.engine.HOME
 import com.example.ludoduel.engine.LastAction
 import com.example.ludoduel.engine.Phase
 import com.example.ludoduel.engine.PlayerColor
+import com.example.ludoduel.engine.TOKENS_PER_PLAYER
 import com.example.ludoduel.engine.YARD
 import com.example.ludoduel.ui.components.PillState
 import com.example.ludoduel.ui.theme.LudoPalette
@@ -61,6 +63,7 @@ data class AnimatorTexts(
     /** Format with the player's name. */
     val ranOutOfTime: String,
     val couldNotRoll: String,
+    val luckyBoost: String,
 )
 
 /**
@@ -81,7 +84,9 @@ class GameAnimator(
     private val palette: LudoPalette,
 ) {
     var fx: GameFx = SilentFx
-    var texts = AnimatorTexts("", "", "", "", "", "%1\$s", "%1\$s", "")
+    var texts = AnimatorTexts("", "", "", "", "", "%1\$s", "%1\$s", "", "")
+    /** The room's Lucky Boost setting (for the "Lucky Boost!" message). */
+    var luckyBoost = false
     var nameOf: (PlayerColor) -> String = { "" }
 
     val pills = PillState()
@@ -100,6 +105,11 @@ class GameAnimator(
 
     val tokens: Map<TokenKey, TokenVisual> =
         BoardGeometry.layout(initial.state, viewer).mapValues { (_, spot) -> TokenVisual(spot.point.toOffset(), spot.scale) }
+
+    /** Where each token is on the board right now, as the screen shows it (not the server's latest). */
+    private val progress: MutableMap<TokenKey, Int> = progressOf(initial).toMutableMap()
+    /** Tokens in the middle of an animation. They are never part of a stack. */
+    private val moving = mutableSetOf<TokenKey>()
     val dice: Map<PlayerColor, DieVisual> = PlayerColor.entries.associateWith { DieVisual() }
 
     private val pending = ArrayDeque<RoomGame>()
@@ -206,6 +216,10 @@ class GameAnimator(
             }
         }
 
+        // A 6 while the Lucky Boost was raising the odds for this player: say so, openly.
+        if (value == 6 && luckyBoost && Dice.luckyStreak(prev.state, roller) >= 3) {
+            pills.show(texts.luckyBoost, palette.green.main)
+        }
         val turnPassed = next.state.phase == Phase.ROLL && next.state.turn != roller
         when {
             next.state.phase == Phase.OVER -> Unit
@@ -306,12 +320,18 @@ class GameAnimator(
         val index = checkNotNull(last.token)
         val from = checkNotNull(last.from)
         val to = checkNotNull(last.to)
-        val token = tokens.getValue(TokenKey(color, index))
-        activeToken = TokenKey(color, index)
+        val key = TokenKey(color, index)
+        val token = tokens.getValue(key)
+        activeToken = key
         val colors = palette.of(color)
         val points = BoardGeometry.path(color, index, from, to).map { BoardGeometry.forViewer(it, viewer).toOffset() }
 
-        token.scale = 1f
+        // The moving token leaves its stack at once: the tokens it leaves behind spread out again.
+        moving += key
+        coroutineScope {
+            launch { relayout() }
+            animate(token.scale, 1f, animationSpec = tween(RESTACK_MILLIS)) { v, _ -> token.scale = v }
+        }
         if (from == YARD) {
             // Pops out of its slot, then hops onto the start square with a sparkle.
             animate(0f, 1f, animationSpec = tween(160)) { t, _ ->
@@ -337,27 +357,39 @@ class GameAnimator(
         } else {
             squash(token)
         }
+        // Arrived: it is at rest again, and joins whatever is on its new square.
+        progress[key] = to
+        moving -= key
+        relayout()
 
         last.captured?.let { capturedIndex ->
-            val victimColor = color.opponent
-            val victim = tokens.getValue(TokenKey(victimColor, capturedIndex))
+            val victimKey = TokenKey(color.opponent, capturedIndex)
+            val victim = tokens.getValue(victimKey)
             // Knocked: a flash and little stars, then it flies home along a fast arc.
-            effects.add(BurstKind.STARS, victim.pos, palette.of(victimColor).main)
+            effects.add(BurstKind.STARS, victim.pos, palette.of(color.opponent).main)
             fx.play(Sfx.CAPTURE)
             fx.buzz(Buzz.CAPTURE)
             animate(0f, 1f, animationSpec = tween(200)) { t, _ -> victim.flash = sin(t * PI).toFloat() }
             victim.flash = 0f
+            moving += victimKey
             val start = victim.pos
-            val home = BoardGeometry.forViewer(BoardGeometry.yardSpot(victimColor, capturedIndex), viewer).toOffset()
-            animate(0f, 1f, animationSpec = tween(500, easing = FastOutSlowInEasing)) { t, _ ->
-                val s = sin(t * PI).toFloat()
-                victim.pos = lerp(start, home, t)
-                victim.liftPx = s * 42.dp.px()
-                victim.hop = s * 0.6f
+            val startScale = victim.scale
+            val home = BoardGeometry.forViewer(BoardGeometry.yardSpot(color.opponent, capturedIndex), viewer).toOffset()
+            coroutineScope {
+                launch { relayout() } // the attacker has the square to itself again
+                animate(0f, 1f, animationSpec = tween(500, easing = FastOutSlowInEasing)) { t, _ ->
+                    val s = sin(t * PI).toFloat()
+                    victim.pos = lerp(start, home, t)
+                    victim.scale = startScale + (1f - startScale) * t
+                    victim.liftPx = s * 42.dp.px()
+                    victim.hop = s * 0.6f
+                }
             }
             victim.liftPx = 0f
             victim.hop = 0f
-            victim.scale = 1f
+            progress[victimKey] = YARD
+            moving -= victimKey
+            relayout()
             pills.show(texts.captured, seatPill(color))
         }
     }
@@ -383,22 +415,36 @@ class GameAnimator(
         token.squash = 0f
     }
 
-    /** Moves every token to its final place (stacks fan out, finished tokens gather) together. */
-    private suspend fun settle(game: RoomGame) = coroutineScope {
-        for ((key, spot) in BoardGeometry.layout(game.state, viewer)) {
+    /**
+     * Moves every token at rest to its place: stacks are worked out only from tokens at rest, so a
+     * stack updates the moment a token leaves or arrives.
+     */
+    private suspend fun relayout(millis: Int = RESTACK_MILLIS) = coroutineScope {
+        val atRest = progress.filterKeys { it !in moving }
+        for ((key, spot) in BoardGeometry.layout(atRest, viewer)) {
             val token = tokens.getValue(key)
             val target = spot.point.toOffset()
             if (token.pos == target && token.scale == spot.scale) continue
             launch {
                 val startPos = token.pos
                 val startScale = token.scale
-                animate(0f, 1f, animationSpec = tween(SETTLE_MILLIS)) { t, _ ->
+                animate(0f, 1f, animationSpec = tween(millis)) { t, _ ->
                     token.pos = lerp(startPos, target, t)
                     token.scale = startScale + (spot.scale - startScale) * t
                 }
             }
         }
     }
+
+    /** After an update: every token takes the place the new state gives it. */
+    private suspend fun settle(game: RoomGame) {
+        progress.putAll(progressOf(game))
+        moving.clear()
+        relayout(SETTLE_MILLIS)
+    }
+
+    private fun progressOf(game: RoomGame): Map<TokenKey, Int> =
+        PlayerColor.entries.flatMap { c -> (0 until TOKENS_PER_PLAYER).map { i -> TokenKey(c, i) to game.state.tokensOf(c)[i] } }.toMap()
 
     /** After an update: the die goes to whoever rolls next, and a pill says whose turn it is. */
     private fun afterStep(prev: RoomGame, next: RoomGame) {
@@ -421,6 +467,8 @@ class GameAnimator(
     private fun snap(game: RoomGame) {
         myRoll.snapped(game.version)
         syncRoll()
+        progress.putAll(progressOf(game))
+        moving.clear()
         for ((key, spot) in BoardGeometry.layout(game.state, viewer)) {
             tokens.getValue(key).apply {
                 pos = spot.point.toOffset()
@@ -454,6 +502,8 @@ class GameAnimator(
         const val NO_MOVE_HOLD_MILLIS = 1_000L
         const val HOP_MILLIS = 140
         const val SETTLE_MILLIS = 160
+        /** How fast a stack rearranges when a token leaves or arrives. */
+        const val RESTACK_MILLIS = 120
         /** More waiting updates than this and we stop animating and jump to the latest. */
         const val MAX_BACKLOG = 3
     }

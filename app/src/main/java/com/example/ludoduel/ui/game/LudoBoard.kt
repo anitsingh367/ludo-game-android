@@ -18,7 +18,6 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
@@ -37,7 +36,6 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import com.example.ludoduel.engine.GameState
 import com.example.ludoduel.engine.HOME
-import com.example.ludoduel.engine.LAST_TRACK
 import com.example.ludoduel.engine.PlayerColor
 import com.example.ludoduel.ui.theme.Baloo
 import com.example.ludoduel.ui.theme.LocalLudoPalette
@@ -129,7 +127,6 @@ fun LudoBoard(
             val unit = size.width / BoardGeometry.SIZE
             val state = animator.shown.state
             val movableKeys = movable.map { TokenKey(me, it) }.toSet()
-            drawBlocks(state, animator.tokens, unit, palette)
             drawFinished(state, me, unit, palette, textMeasurer)
             // Tokens in the air, the token that just moved and movable tokens are drawn last, so they are on top.
             val order = animator.tokens.keys
@@ -216,28 +213,6 @@ internal fun pickToken(tap: Offset, movable: List<Int>, myTokens: List<Int>, pos
         return TapResult.TooClose(listOf(bySquare[0].first, bySquare[1].first))
     }
     return TapResult.Pick(bySquare[0].first)
-}
-
-/** A subtle shared outline around two or more tokens of one color on a track square (a block). */
-private fun DrawScope.drawBlocks(state: GameState, tokens: Map<TokenKey, TokenVisual>, unit: Float, palette: LudoPalette) {
-    for (color in PlayerColor.entries) {
-        state.tokensOf(color).withIndex()
-            .filter { it.value in 0..LAST_TRACK }
-            .groupBy { it.value }
-            .values.filter { it.size >= 2 }
-            .forEach { group ->
-                val points = group.map { tokens.getValue(TokenKey(color, it.index)).pos }
-                val left = points.minOf { it.x } - 0.34f
-                val right = points.maxOf { it.x } + 0.34f
-                val top = points.minOf { it.y } - 0.46f
-                val bottom = points.maxOf { it.y } + 0.42f
-                val tl = Offset(left * unit, top * unit)
-                val sz = Size((right - left) * unit, (bottom - top) * unit)
-                val colors = palette.of(color)
-                drawRoundRect(colors.light.copy(alpha = 0.55f), tl, sz, CornerRadius(unit * 0.3f))
-                drawRoundRect(colors.dark.copy(alpha = 0.7f), tl, sz, CornerRadius(unit * 0.3f), style = Stroke(unit * 0.06f))
-            }
-    }
 }
 
 /** One pawn in each color's center triangle with the number of tokens that reached home. */
