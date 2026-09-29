@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A 2x2 Ludo board: red and yellow quarters in opposite corners, with a die dot pattern. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path android:fillColor="#FFD32F2F" android:pathData="M30,54 L54,54 L54,78 L30,78 Z" />
+    <path android:fillColor="#FFF9A825" android:pathData="M54,30 L78,30 L78,54 L54,54 Z" />
+    <path android:fillColor="#FFBDBDBD" android:pathData="M30,30 L54,30 L54,54 L30,54 Z" />
+    <path android:fillColor="#FFBDBDBD" android:pathData="M54,54 L78,54 L78,78 L54,78 Z" />
+    <path android:fillColor="#FFFFFFFF" android:pathData="M42,66 m-5,0 a5,5 0 1,0 10,0 a5,5 0 1,0 -10,0" />
+    <path android:fillColor="#FFFFFFFF" android:pathData="M66,42 m-5,0 a5,5 0 1,0 10,0 a5,5 0 1,0 -10,0" />
+</vector>

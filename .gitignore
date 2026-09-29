@@ -1,0 +1,16 @@
+*.iml
+.gradle/
+/local.properties
+/.idea/
+.DS_Store
+/build/
+/app/build/
+/captures/
+.externalNativeBuild/
+.cxx/
+.kotlin/
+# Firebase config is private to your Firebase project. Download it yourself (see README).
+app/google-services.json
+# Firebase emulator / node tooling for the rules tests
+rules-tests/node_modules/
+*-debug.log

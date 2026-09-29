@@ -1,0 +1,20 @@
+{
+  "project_info": {
+    "project_number": "123456789012",
+    "firebase_url": "https://demo-ludo-default-rtdb.firebaseio.com",
+    "project_id": "demo-ludo",
+    "storage_bucket": "demo-ludo.appspot.com"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:123456789012:android:0123456789abcdef",
+        "android_client_info": { "package_name": "com.example.ludoduel" }
+      },
+      "oauth_client": [],
+      "api_key": [{ "current_key": "AIzaSyA-placeholder-key-for-local-emulator" }],
+      "services": { "appinvite_service": { "other_platform_oauth_client": [] } }
+    }
+  ],
+  "configuration_version": "1"
+}

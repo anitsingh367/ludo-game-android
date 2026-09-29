@@ -1,0 +1,243 @@
+{
+  // Realtime Database security rules for Ludo Duel.
+  //
+  // Model: rooms/{code} holds one private 2-player game. The host (Red) creates it, one guest
+  // (Yellow) joins with the code. Only those two players can read the room, except for a few
+  // small fields a signed-in user needs to check a code before joining (marked "public" below).
+  //
+  // Notes on RTDB rules used here:
+  //  - A ".write" that is true at a node also allows writes to everything below it.
+  //  - ".validate" rules check the shape of the new data; they are not run when data is deleted.
+  //  - "now" is the server time in milliseconds.
+  "rules": {
+    // Deny everything by default. Only the paths below are open, and only to signed-in users.
+    ".read": false,
+    ".write": false,
+
+    "rooms": {
+      // Nobody can list rooms. The room code is the only way in.
+      //
+      // Index for maintenance only: lets you (with admin access) find old rooms with
+      // orderByChild("expiresAt") to delete them. The app itself makes no queries.
+      ".indexOn": ["expiresAt"],
+
+      "$code": {
+        // The code must be 6 characters from the app's alphabet (no 0/O/1/I/L).
+        ".validate": "$code.matches(/^[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{6}$/) && newData.hasChildren(['schemaVersion', 'createdAt', 'expiresAt', 'hostUid', 'status'])",
+
+        // Read the whole room: only its host and guest. Reading a code that does not exist yet
+        // is allowed (it returns nothing), so the create transaction can check the code is free.
+        ".read": "auth != null && (!data.exists() || data.child('hostUid').val() === auth.uid || data.child('guestUid').val() === auth.uid)",
+
+        // Create a room: only if the code is free, the creator is the host, there is no guest
+        // yet, the status is "waiting", the schema version is 1, there is no game yet, and the
+        // times are sane (created within 5 minutes of server time, expires 24 hours later).
+        // Existing rooms can never be replaced or deleted through this rule.
+        ".write": "auth != null && !data.exists() && newData.child('hostUid').val() === auth.uid && !newData.child('guestUid').exists() && newData.child('status').val() === 'waiting' && newData.child('schemaVersion').val() === 1 && !newData.child('game').exists() && !newData.child('rematch').exists() && newData.child('createdAt').isNumber() && newData.child('createdAt').val() > now - 300000 && newData.child('createdAt').val() < now + 300000 && newData.child('expiresAt').val() === newData.child('createdAt').val() + 86400000 && newData.child('players').child(auth.uid).exists()",
+
+        // Public: the app shows "Please update the app" when this is not 1. Never changes.
+        "schemaVersion": {
+          ".read": "auth != null",
+          ".validate": "newData.isNumber() && newData.val() === 1"
+        },
+        // Set once at creation (see the room ".write" above). Never changes.
+        "createdAt": {
+          ".validate": "newData.isNumber()"
+        },
+        // Public: the join screen shows "This room has expired". Never changes.
+        "expiresAt": {
+          ".read": "auth != null",
+          ".validate": "newData.isNumber()"
+        },
+        // Public: needed to tell the host "this is your own room". Never changes.
+        "hostUid": {
+          ".read": "auth != null",
+          ".validate": "newData.isString()"
+        },
+
+        // Public (read): needed to tell "Room is full". Write: set exactly once, by the joining
+        // user, to their own uid, while the room is waiting and not expired. The host cannot
+        // join their own room as the guest. The app does this in a transaction; this rule also
+        // guarantees that of two people joining at once only one gets in.
+        "guestUid": {
+          ".read": "auth != null",
+          ".write": "auth != null && !data.exists() && newData.val() === auth.uid && auth.uid !== data.parent().child('hostUid').val() && data.parent().child('status').val() === 'waiting' && now < data.parent().child('expiresAt').val()",
+          ".validate": "newData.isString()"
+        },
+
+        // Public (read): needed to tell "Room closed". Write: only the two players, and only
+        // these changes:
+        //  - waiting -> playing: the guest, in the same update that creates the game.
+        //  - waiting -> abandoned: the host cancels the room before anyone joined.
+        //  - playing -> finished: the game ended.
+        //  - finished -> playing: a rematch started (the new game is not over).
+        //  - anything except waiting -> abandoned: a player left.
+        //  - writing the same value again (harmless retries).
+        "status": {
+          ".read": "auth != null",
+          ".write": "auth != null && (auth.uid === data.parent().child('hostUid').val() || auth.uid === newData.parent().child('guestUid').val()) && ((data.val() === 'waiting' && newData.val() === 'playing' && auth.uid === newData.parent().child('guestUid').val() && newData.parent().child('game').exists()) || (data.val() === 'waiting' && newData.val() === 'abandoned' && auth.uid === data.parent().child('hostUid').val()) || (data.val() === 'playing' && newData.val() === 'finished') || (data.val() === 'finished' && newData.val() === 'playing' && newData.parent().child('game/phase').val() !== 'OVER') || (data.exists() && data.val() !== 'waiting' && newData.val() === 'abandoned') || (data.exists() && newData.val() === data.val()))",
+          ".validate": "newData.isString() && (newData.val() === 'waiting' || newData.val() === 'playing' || newData.val() === 'finished' || newData.val() === 'abandoned')"
+        },
+
+        "players": {
+          "$uid": {
+            // A player can write only their own entry, and only if they are the host or guest
+            // of this room. (The host's first entry is written as part of creating the room.)
+            ".write": "auth != null && auth.uid === $uid && (auth.uid === root.child('rooms').child($code).child('hostUid').val() || auth.uid === root.child('rooms').child($code).child('guestUid').val())",
+            ".validate": "newData.hasChildren(['color', 'name', 'connected', 'lastSeen'])",
+            // The host is always red and the guest always yellow.
+            "color": {
+              ".validate": "($uid === newData.parent().parent().parent().child('hostUid').val() && newData.val() === 'red') || ($uid === newData.parent().parent().parent().child('guestUid').val() && newData.val() === 'yellow')"
+            },
+            "name": {
+              ".validate": "newData.isString() && newData.val().length >= 2 && newData.val().length <= 16"
+            },
+            "connected": {
+              ".validate": "newData.isBoolean()"
+            },
+            "lastSeen": {
+              ".validate": "newData.isNumber()"
+            },
+            "$other": {
+              ".validate": false
+            }
+          }
+        },
+
+        "rematch": {
+          // Either player may clear all rematch votes (done right after a rematch starts).
+          ".write": "auth != null && !newData.exists() && (auth.uid === data.parent().child('hostUid').val() || auth.uid === data.parent().child('guestUid').val())",
+          "$uid": {
+            // A player can only cast their own vote. The vote is the number of the game that
+            // just ended, so an old vote can never start a later rematch by accident.
+            ".write": "auth != null && auth.uid === $uid && (auth.uid === root.child('rooms').child($code).child('hostUid').val() || auth.uid === root.child('rooms').child($code).child('guestUid').val())",
+            ".validate": "newData.isNumber() && newData.val() === root.child('rooms').child($code).child('game/gameNumber').val() && root.child('rooms').child($code).child('game/phase').val() === 'OVER'"
+          }
+        },
+
+        "game": {
+          // Every game write must come from one of the two players, and must be one of:
+          //
+          // 1. Start of game 1: written by the guest while joining. Version 1, game 1,
+          //    host (Red) moves first, nothing has happened yet.
+          //
+          // 2. A normal action (roll, move, or an automatic action when the player's own timer
+          //    ran out): only by the player whose turn it is, version + 1, same game number.
+          //
+          // 3. A Timeout by the OTHER player: only when server time is more than 5 seconds past
+          //    the turn deadline. It must record the late player, add exactly 1 to their missed
+          //    turns, and leave every token where it was.
+          //
+          // 4. Leaving: either player may forfeit at any time while the game runs; they must be
+          //    the loser and the reason must be "left".
+          //
+          // 5. Rematch: after the game is over and both players voted for a rematch of this game
+          //    number, either player may start game number + 1 with all tokens in the yard and
+          //    the loser moving first.
+          //
+          // In every case except 1 the new version must be exactly the old version + 1.
+          // The game can never be deleted.
+          ".write": "auth != null && newData.exists() && (auth.uid === root.child('rooms').child($code).child('hostUid').val() || auth.uid === root.child('rooms').child($code).child('guestUid').val()) && ((!data.exists() && auth.uid === root.child('rooms').child($code).child('guestUid').val() && newData.child('version').val() === 1 && newData.child('gameNumber').val() === 1 && newData.child('turnUid').val() === root.child('rooms').child($code).child('hostUid').val() && newData.child('phase').val() === 'ROLL' && !newData.child('lastAction').exists() && !newData.child('winnerUid').exists()) || (data.exists() && newData.child('version').val() === data.child('version').val() + 1 && ((data.child('phase').val() !== 'OVER' && data.child('turnUid').val() === auth.uid && newData.child('gameNumber').val() === data.child('gameNumber').val() && newData.child('lastAction/byUid').val() === auth.uid && newData.child('lastAction/type').val() !== 'timeout') || (data.child('phase').val() !== 'OVER' && data.child('turnUid').val() !== auth.uid && now > data.child('turnDeadline').val() + 5000 && newData.child('gameNumber').val() === data.child('gameNumber').val() && newData.child('lastAction/type').val() === 'timeout' && newData.child('lastAction/byUid').val() === data.child('turnUid').val() && newData.child('missedTurns').child(data.child('turnUid').val()).val() === data.child('missedTurns').child(data.child('turnUid').val()).val() + 1 && newData.child('tokens/red/0').val() === data.child('tokens/red/0').val() && newData.child('tokens/red/1').val() === data.child('tokens/red/1').val() && newData.child('tokens/red/2').val() === data.child('tokens/red/2').val() && newData.child('tokens/red/3').val() === data.child('tokens/red/3').val() && newData.child('tokens/yellow/0').val() === data.child('tokens/yellow/0').val() && newData.child('tokens/yellow/1').val() === data.child('tokens/yellow/1').val() && newData.child('tokens/yellow/2').val() === data.child('tokens/yellow/2').val() && newData.child('tokens/yellow/3').val() === data.child('tokens/yellow/3').val()) || (data.child('phase').val() !== 'OVER' && newData.child('gameNumber').val() === data.child('gameNumber').val() && newData.child('lastAction/type').val() === 'left' && newData.child('lastAction/byUid').val() === auth.uid && newData.child('phase').val() === 'OVER' && newData.child('winReason').val() === 'left' && newData.child('winnerUid').exists() && newData.child('winnerUid').val() !== auth.uid) || (data.child('phase').val() === 'OVER' && newData.child('gameNumber').val() === data.child('gameNumber').val() + 1 && root.child('rooms').child($code).child('rematch').child(root.child('rooms').child($code).child('hostUid').val()).val() === data.child('gameNumber').val() && root.child('rooms').child($code).child('rematch').child(root.child('rooms').child($code).child('guestUid').val()).val() === data.child('gameNumber').val() && newData.child('phase').val() === 'ROLL' && newData.child('turnUid').val() !== data.child('winnerUid').val() && !newData.child('lastAction').exists() && !newData.child('winnerUid').exists() && newData.child('tokens/red/0').val() === -1 && newData.child('tokens/red/1').val() === -1 && newData.child('tokens/red/2').val() === -1 && newData.child('tokens/red/3').val() === -1 && newData.child('tokens/yellow/0').val() === -1 && newData.child('tokens/yellow/1').val() === -1 && newData.child('tokens/yellow/2').val() === -1 && newData.child('tokens/yellow/3').val() === -1))))",
+
+          ".validate": "newData.hasChildren(['version', 'gameNumber', 'turnUid', 'phase', 'sixesInRow', 'tokens', 'missedTurns', 'turnDeadline'])",
+
+          "version": {
+            ".validate": "newData.isNumber() && newData.val() >= 1 && newData.val() % 1 === 0"
+          },
+          "gameNumber": {
+            ".validate": "newData.isNumber() && newData.val() >= 1 && newData.val() % 1 === 0"
+          },
+          // Whose turn it is: must be one of the two players.
+          "turnUid": {
+            ".validate": "newData.val() === root.child('rooms').child($code).child('hostUid').val() || newData.val() === newData.parent().parent().child('guestUid').val()"
+          },
+          "phase": {
+            ".validate": "newData.val() === 'ROLL' || newData.val() === 'MOVE' || newData.val() === 'OVER'"
+          },
+          // The dice is absent (null) or a whole number from 1 to 6.
+          "dice": {
+            ".validate": "newData.isNumber() && newData.val() >= 1 && newData.val() <= 6 && newData.val() % 1 === 0"
+          },
+          "sixesInRow": {
+            ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 2 && newData.val() % 1 === 0"
+          },
+          // Exactly 4 tokens per color, each a whole number from -1 (yard) to 56 (home).
+          "tokens": {
+            ".validate": "newData.hasChildren(['red', 'yellow'])",
+            "red": {
+              ".validate": "newData.hasChildren(['0', '1', '2', '3'])",
+              "$i": {
+                ".validate": "$i.matches(/^[0-3]$/) && newData.isNumber() && newData.val() >= -1 && newData.val() <= 56 && newData.val() % 1 === 0"
+              }
+            },
+            "yellow": {
+              ".validate": "newData.hasChildren(['0', '1', '2', '3'])",
+              "$i": {
+                ".validate": "$i.matches(/^[0-3]$/) && newData.isNumber() && newData.val() >= -1 && newData.val() <= 56 && newData.val() % 1 === 0"
+              }
+            },
+            "$other": {
+              ".validate": false
+            }
+          },
+          // Missed turns per player uid, 0 to 3.
+          "missedTurns": {
+            "$uid": {
+              ".validate": "($uid === root.child('rooms').child($code).child('hostUid').val() || $uid === newData.parent().parent().parent().child('guestUid').val()) && newData.isNumber() && newData.val() >= 0 && newData.val() <= 3 && newData.val() % 1 === 0"
+            }
+          },
+          // Server time when the turn runs out: at most 2 minutes ahead (30 s turn plus clock
+          // tolerance), so a player cannot freeze the game with a far-future deadline.
+          // 0 once the game is over.
+          "turnDeadline": {
+            ".validate": "newData.isNumber() && newData.val() <= now + 120000"
+          },
+          "lastAction": {
+            ".validate": "newData.hasChildren(['type', 'byUid', 'auto'])",
+            "type": {
+              ".validate": "newData.val() === 'roll' || newData.val() === 'move' || newData.val() === 'timeout' || newData.val() === 'left'"
+            },
+            "byUid": {
+              ".validate": "newData.val() === root.child('rooms').child($code).child('hostUid').val() || newData.val() === newData.parent().parent().parent().child('guestUid').val()"
+            },
+            "dice": {
+              ".validate": "newData.isNumber() && newData.val() >= 1 && newData.val() <= 6"
+            },
+            "token": {
+              ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 3"
+            },
+            "from": {
+              ".validate": "newData.isNumber() && newData.val() >= -1 && newData.val() <= 56"
+            },
+            "to": {
+              ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 56"
+            },
+            "captured": {
+              ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 3"
+            },
+            "auto": {
+              ".validate": "newData.isBoolean()"
+            },
+            "$other": {
+              ".validate": false
+            }
+          },
+          "winnerUid": {
+            ".validate": "newData.val() === root.child('rooms').child($code).child('hostUid').val() || newData.val() === newData.parent().parent().child('guestUid').val()"
+          },
+          "winReason": {
+            ".validate": "newData.val() === 'all_home' || newData.val() === 'forfeit' || newData.val() === 'left'"
+          },
+          "$other": {
+            ".validate": false
+          }
+        },
+
+        // No other fields are allowed in a room.
+        "$other": {
+          ".validate": false
+        }
+      }
+    }
+  }
+}

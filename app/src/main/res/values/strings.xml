@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Ludo Duel</string>
+
+    <!-- Splash -->
+    <string name="splash_signing_in">Connecting…</string>
+    <string name="splash_offline">Could not sign in. Check your internet connection.</string>
+    <string name="splash_not_configured">Firebase is not set up. Add app/google-services.json and rebuild (see README).</string>
+    <string name="splash_no_database">No Realtime Database found in google-services.json. Create the database in the Firebase console, download google-services.json again and rebuild (see README).</string>
+    <string name="retry">Retry</string>
+
+    <!-- Home -->
+    <string name="home_subtitle">Classic Ludo for two, in private rooms</string>
+    <string name="home_name_label">Your name</string>
+    <string name="home_name_error">Use 2 to 16 characters</string>
+    <string name="home_create">Create room</string>
+    <string name="home_join">Join room</string>
+    <string name="home_rejoin_title">Game in progress</string>
+    <string name="home_rejoin_body">You were playing in room %1$s. Rejoin game?</string>
+    <string name="home_rejoin">Rejoin game</string>
+    <string name="home_create_failed">Could not create a room. Check your connection and try again.</string>
+
+    <!-- Waiting room -->
+    <string name="waiting_title">Your room code</string>
+    <string name="waiting_hint">Share this code with your friend</string>
+    <string name="waiting_for_opponent">Waiting for opponent…</string>
+    <string name="copy">Copy</string>
+    <string name="copied">Code copied</string>
+    <string name="share">Share</string>
+    <string name="share_message">Join my Ludo game! Code: %1$s</string>
+    <string name="share_chooser">Share room code</string>
+    <string name="cancel">Cancel</string>
+
+    <!-- Join -->
+    <string name="join_title">Join a room</string>
+    <string name="join_hint">Enter the 6-character code from your friend</string>
+    <string name="join_button">Join</string>
+    <string name="join_code_field">Room code</string>
+    <string name="join_error_incomplete">Enter all 6 characters</string>
+    <string name="join_error_not_found">Room not found</string>
+    <string name="join_error_expired">This room has expired</string>
+    <string name="join_error_full">Room is full</string>
+    <string name="join_error_closed">Room closed</string>
+    <string name="join_error_update">Please update the app to join this room</string>
+    <string name="join_error_failed">Could not join. Check your connection and try again.</string>
+    <string name="back">Back</string>
+
+    <!-- Game -->
+    <string name="game_room_code">Room %1$s</string>
+    <string name="game_how_to_play">How to play</string>
+    <string name="game_mute">Mute sound and vibration</string>
+    <string name="game_unmute">Turn on sound and vibration</string>
+    <string name="game_reconnecting">Reconnecting… Moves are paused.</string>
+    <string name="game_opponent_offline">Opponent disconnected — waiting (%1$s)</string>
+    <string name="game_you">%1$s (you)</string>
+    <string name="game_red">Red</string>
+    <string name="game_yellow">Yellow</string>
+    <string name="game_your_turn_roll">Your turn — tap the dice</string>
+    <string name="game_your_turn_move">Tap a glowing token to move %1$d</string>
+    <string name="game_opponent_turn">%1$s\'s turn</string>
+    <string name="game_no_move">%1$s rolled %2$d — no move possible</string>
+    <string name="game_three_sixes">%1$s rolled three 6s — turn lost</string>
+    <string name="game_timeout">%1$s ran out of time</string>
+    <string name="game_roll">Roll</string>
+    <string name="game_dice_description">Dice showing %1$d</string>
+    <string name="game_loading">Loading game…</string>
+    <string name="game_error_corrupt">Something went wrong with this game.</string>
+    <string name="game_error_update">Please update the app to join this room.</string>
+    <string name="game_error_gone">This room is no longer available.</string>
+    <string name="go_home">Go home</string>
+    <string name="leave_title">Leave game?</string>
+    <string name="leave_body">You will lose.</string>
+    <string name="leave_confirm">Leave</string>
+    <string name="stay">Stay</string>
+    <string name="board_description">Ludo board. You are %1$s.</string>
+
+    <!-- Game over -->
+    <string name="over_you_won">You won!</string>
+    <string name="over_you_lost">You lost</string>
+    <string name="over_reason_all_home">%1$s brought all four tokens home.</string>
+    <string name="over_reason_forfeit">%1$s missed 3 turns in a row.</string>
+    <string name="over_reason_left">%1$s left the game.</string>
+    <string name="over_rematch">Rematch</string>
+    <string name="over_rematch_waiting">Waiting for %1$s…</string>
+    <string name="over_rematch_offered">%1$s wants a rematch!</string>
+    <string name="over_opponent_left">Opponent left</string>
+    <string name="over_home">Home</string>
+
+    <!-- How to play -->
+    <string name="rules_title">How to play</string>
+    <string name="rules_body">• Roll the dice on your turn, then tap a glowing token to move it.\n• A token leaves the yard only on a 6.\n• A 6 gives you another roll. Three 6s in a row lose the turn.\n• Land on a single opponent token to send it back to its yard and roll again. Star squares are safe.\n• Two of your tokens on one square make a block. Your opponent cannot land on it or pass it.\n• You need the exact number to reach home. A token reaching home gives another roll.\n• You have 30 seconds per turn. Miss 3 turns in a row and you lose.\n• First to bring all four tokens home wins.</string>
+    <string name="close">Close</string>
+</resources>
