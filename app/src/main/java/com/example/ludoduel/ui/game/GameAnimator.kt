@@ -18,15 +18,16 @@ import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import com.example.ludoduel.data.RoomGame
 import com.example.ludoduel.engine.ActionType
+import com.example.ludoduel.engine.Dice
 import com.example.ludoduel.engine.HOME
 import com.example.ludoduel.engine.LastAction
 import com.example.ludoduel.engine.Phase
 import com.example.ludoduel.engine.PlayerColor
+import com.example.ludoduel.engine.TOKENS_PER_PLAYER
 import com.example.ludoduel.engine.YARD
 import com.example.ludoduel.ui.components.PillState
 import com.example.ludoduel.ui.theme.LudoPalette
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
@@ -61,6 +62,8 @@ data class AnimatorTexts(
     val playersTurn: String,
     /** Format with the player's name. */
     val ranOutOfTime: String,
+    val couldNotRoll: String,
+    val luckyBoost: String,
 )
 
 /**
@@ -81,7 +84,9 @@ class GameAnimator(
     private val palette: LudoPalette,
 ) {
     var fx: GameFx = SilentFx
-    var texts = AnimatorTexts("", "", "", "", "", "%1\$s", "%1\$s")
+    var texts = AnimatorTexts("", "", "", "", "", "%1\$s", "%1\$s", "", "")
+    /** The room's Lucky Boost setting (for the "Lucky Boost!" message). */
+    var luckyBoost = false
     var nameOf: (PlayerColor) -> String = { "" }
 
     val pills = PillState()
@@ -100,14 +105,22 @@ class GameAnimator(
 
     val tokens: Map<TokenKey, TokenVisual> =
         BoardGeometry.layout(initial.state, viewer).mapValues { (_, spot) -> TokenVisual(spot.point.toOffset(), spot.scale) }
+
+    /** Where each token is on the board right now, as the screen shows it (not the server's latest). */
+    private val progress: MutableMap<TokenKey, Int> = progressOf(initial).toMutableMap()
+    /** Tokens in the middle of an animation. They are never part of a stack. */
+    private val moving = mutableSetOf<TokenKey>()
     val dice: Map<PlayerColor, DieVisual> = PlayerColor.entries.associateWith { DieVisual() }
 
     private val pending = ArrayDeque<RoomGame>()
     private val signal = Channel<Unit>(Channel.CONFLATED)
     private var lastSubmitted: RoomGame? = null
     private lateinit var scope: CoroutineScope
-    private var localRoll: Job? = null
-    private var localRollStartNanos = 0L
+
+    /** My die's state machine; [myRollState] mirrors it for the screen. */
+    private val myRoll = RollMachine()
+    var myRollState by mutableStateOf<RollMachine.State>(RollMachine.State.Idle)
+        private set
 
     init {
         showDieFor(initial)
@@ -143,27 +156,23 @@ class GameAnimator(
         }
     }
 
-    /**
-     * My own roll: the die starts tumbling right away (the only optimistic UI), while the roll is
-     * written. The roll animation then lands it on the real value. Stops by itself if no roll arrives.
-     */
-    fun startLocalRoll() {
-        if (localRoll?.isActive == true) return
-        val die = dice.getValue(viewer)
-        localRollStartNanos = System.nanoTime()
-        fx.play(Sfx.ROLL)
-        fx.buzz(Buzz.ROLL)
-        localRoll = scope.launch {
-            die.tumbling = true
-            val started = System.nanoTime()
-            while ((System.nanoTime() - started) < LOCAL_ROLL_TIMEOUT_NANOS) {
-                shuffleFace(die)
-                delay(60)
-            }
-            // No roll came back (for example the write was rejected): stop and show the blank face.
-            resetDie(die)
-            die.face = null
-        }
+    /** A tap on my die. Returns true when the roll should be sent (the die is disabled from now on). */
+    fun tapRoll(nowMillis: Long): Boolean = myRoll.tap(nowMillis).also { syncRoll() }
+
+    /** The roll could not be sent: the die works again and a pill says so. */
+    fun rollSendFailed() {
+        if (myRoll.sendFailed()) pills.show(texts.couldNotRoll, palette.amber)
+        syncRoll()
+    }
+
+    /** Safety net: no confirmed roll within 5 s (or the app was away) gives up, with a pill. */
+    fun tickRoll(nowMillis: Long) {
+        if (myRoll.tick(nowMillis)) pills.show(texts.couldNotRoll, palette.amber)
+        syncRoll()
+    }
+
+    private fun syncRoll() {
+        myRollState = myRoll.state
     }
 
     private suspend fun step(prev: RoomGame, next: RoomGame) {
@@ -191,17 +200,26 @@ class GameAnimator(
         val value = checkNotNull(last.dice)
         val die = dice.getValue(roller)
         moveDieTo(roller)
-        val tumbleMillis = if (roller == viewer && localRoll?.isActive == true) {
-            localRoll?.cancel()
-            val elapsed = (System.nanoTime() - localRollStartNanos) / 1_000_000
-            (TUMBLE_MILLIS - elapsed).coerceAtLeast(MIN_LANDING_TUMBLE_MILLIS)
-        } else {
-            fx.play(Sfx.ROLL)
-            TUMBLE_MILLIS
+        val mine = roller == viewer
+        if (mine) {
+            myRoll.rollConfirmed(next.version)
+            syncRoll()
+            fx.buzz(Buzz.ROLL)
         }
-        tumble(die, tumbleMillis)
-        land(die, value)
+        try {
+            fx.play(Sfx.ROLL)
+            rollAnimation(die, value)
+        } finally {
+            if (mine) {
+                myRoll.animationFinished(next.version)
+                syncRoll()
+            }
+        }
 
+        // A 6 while the Lucky Boost was raising the odds for this player: say so, openly.
+        if (value == 6 && luckyBoost && Dice.luckyStreak(prev.state, roller) >= 3) {
+            pills.show(texts.luckyBoost, palette.green.main)
+        }
         val turnPassed = next.state.phase == Phase.ROLL && next.state.turn != roller
         when {
             next.state.phase == Phase.OVER -> Unit
@@ -235,37 +253,46 @@ class GameAnimator(
         }
     }
 
-    /** Random faces that change more and more slowly, with the die spinning and shaking. */
-    private suspend fun tumble(die: DieVisual, millis: Long) {
-        die.tumbling = true
-        val started = System.nanoTime()
-        var interval = 45.0
-        while ((System.nanoTime() - started) / 1_000_000 < millis) {
-            shuffleFace(die)
-            delay(interval.toLong())
-            interval *= 1.2
+    /**
+     * The whole roll, played once with a fixed length (about 900 ms). The value is already decided;
+     * the animation only shows it: the die jumps up (lifts about 24 dp, grows to 1.3x) while it
+     * tumbles on a random mix of axes, fast at first and then slowing down, and lands with the value
+     * facing the viewer, one small bounce and a wobble that settles. Whole turns of spin are added on
+     * top of the resting angles, so it always ends exactly on [value].
+     */
+    private suspend fun rollAnimation(die: DieVisual, value: Int) {
+        val (restX, restY, restZ) = DieCube.restAngles(value)
+        fun spin(min: Int, max: Int) = Random.nextInt(min, max + 1) * 360f * (if (Random.nextBoolean()) 1 else -1)
+        val spinX = spin(1, 2)
+        val spinY = spin(1, 2)
+        val spinZ = spin(0, 1)
+        die.face = value
+        try {
+            animate(0f, 1f, animationSpec = tween(TUMBLE_MILLIS, easing = LinearEasing)) { t, _ ->
+                val left = (1f - t) * (1f - t) * (1f - t) // ease-out: fast spin first, then slower
+                die.rotX = restX + spinX * left
+                die.rotY = restY + spinY * left
+                die.rotZ = restZ + spinZ * left
+                val up = sin(t * PI).toFloat()
+                die.liftPx = up * 24.dp.px()
+                die.scale3d = 1f + 0.3f * up
+            }
+            fx.play(Sfx.CLACK)
+            animate(0f, 1f, animationSpec = tween(LANDING_MILLIS, easing = LinearEasing)) { t, _ ->
+                die.liftPx = sin(t * PI).toFloat() * 5.dp.px()
+                val wobble = sin(t * 3 * PI).toFloat() * 7f * (1f - t)
+                die.rotX = restX + wobble
+                die.rotY = restY - wobble * 0.6f
+                die.rotZ = restZ
+                die.scale3d = 1f
+            }
+        } finally {
+            die.rest(value)
         }
-        resetDie(die)
-    }
-
-    private fun shuffleFace(die: DieVisual) {
-        die.face = Random.nextInt(1, 7)
-        die.angle = Random.nextInt(-35, 36).toFloat()
-        die.shakeX = Random.nextInt(-5, 6) * density.density
     }
 
     private fun resetDie(die: DieVisual) {
-        die.tumbling = false
-        die.angle = 0f
         die.shakeX = 0f
-    }
-
-    /** Lands with a small bounce: 1.0 -> 1.2 -> 1.0. */
-    private suspend fun land(die: DieVisual, value: Int) {
-        die.face = value
-        die.pop.snapTo(1f)
-        die.pop.animateTo(1.2f, tween(90))
-        die.pop.animateTo(1f, spring(dampingRatio = 0.4f, stiffness = Spring.StiffnessMedium))
     }
 
     private suspend fun shake(die: DieVisual, millis: Int) {
@@ -279,7 +306,7 @@ class GameAnimator(
         if (dieOwner == owner) return
         dieOwner = owner
         val die = dice.getValue(owner)
-        die.face = null
+        die.rest(null)
         scope.launch {
             die.enter.snapTo(0f)
             die.enter.animateTo(1f, tween(250, easing = FastOutSlowInEasing))
@@ -293,12 +320,18 @@ class GameAnimator(
         val index = checkNotNull(last.token)
         val from = checkNotNull(last.from)
         val to = checkNotNull(last.to)
-        val token = tokens.getValue(TokenKey(color, index))
-        activeToken = TokenKey(color, index)
+        val key = TokenKey(color, index)
+        val token = tokens.getValue(key)
+        activeToken = key
         val colors = palette.of(color)
         val points = BoardGeometry.path(color, index, from, to).map { BoardGeometry.forViewer(it, viewer).toOffset() }
 
-        token.scale = 1f
+        // The moving token leaves its stack at once: the tokens it leaves behind spread out again.
+        moving += key
+        coroutineScope {
+            launch { relayout() }
+            animate(token.scale, 1f, animationSpec = tween(RESTACK_MILLIS)) { v, _ -> token.scale = v }
+        }
         if (from == YARD) {
             // Pops out of its slot, then hops onto the start square with a sparkle.
             animate(0f, 1f, animationSpec = tween(160)) { t, _ ->
@@ -324,27 +357,39 @@ class GameAnimator(
         } else {
             squash(token)
         }
+        // Arrived: it is at rest again, and joins whatever is on its new square.
+        progress[key] = to
+        moving -= key
+        relayout()
 
         last.captured?.let { capturedIndex ->
-            val victimColor = color.opponent
-            val victim = tokens.getValue(TokenKey(victimColor, capturedIndex))
+            val victimKey = TokenKey(color.opponent, capturedIndex)
+            val victim = tokens.getValue(victimKey)
             // Knocked: a flash and little stars, then it flies home along a fast arc.
-            effects.add(BurstKind.STARS, victim.pos, palette.of(victimColor).main)
+            effects.add(BurstKind.STARS, victim.pos, palette.of(color.opponent).main)
             fx.play(Sfx.CAPTURE)
             fx.buzz(Buzz.CAPTURE)
             animate(0f, 1f, animationSpec = tween(200)) { t, _ -> victim.flash = sin(t * PI).toFloat() }
             victim.flash = 0f
+            moving += victimKey
             val start = victim.pos
-            val home = BoardGeometry.forViewer(BoardGeometry.yardSpot(victimColor, capturedIndex), viewer).toOffset()
-            animate(0f, 1f, animationSpec = tween(500, easing = FastOutSlowInEasing)) { t, _ ->
-                val s = sin(t * PI).toFloat()
-                victim.pos = lerp(start, home, t)
-                victim.liftPx = s * 42.dp.px()
-                victim.hop = s * 0.6f
+            val startScale = victim.scale
+            val home = BoardGeometry.forViewer(BoardGeometry.yardSpot(color.opponent, capturedIndex), viewer).toOffset()
+            coroutineScope {
+                launch { relayout() } // the attacker has the square to itself again
+                animate(0f, 1f, animationSpec = tween(500, easing = FastOutSlowInEasing)) { t, _ ->
+                    val s = sin(t * PI).toFloat()
+                    victim.pos = lerp(start, home, t)
+                    victim.scale = startScale + (1f - startScale) * t
+                    victim.liftPx = s * 42.dp.px()
+                    victim.hop = s * 0.6f
+                }
             }
             victim.liftPx = 0f
             victim.hop = 0f
-            victim.scale = 1f
+            progress[victimKey] = YARD
+            moving -= victimKey
+            relayout()
             pills.show(texts.captured, seatPill(color))
         }
     }
@@ -370,16 +415,20 @@ class GameAnimator(
         token.squash = 0f
     }
 
-    /** Moves every token to its final place (stacks fan out, finished tokens gather) together. */
-    private suspend fun settle(game: RoomGame) = coroutineScope {
-        for ((key, spot) in BoardGeometry.layout(game.state, viewer)) {
+    /**
+     * Moves every token at rest to its place: stacks are worked out only from tokens at rest, so a
+     * stack updates the moment a token leaves or arrives.
+     */
+    private suspend fun relayout(millis: Int = RESTACK_MILLIS) = coroutineScope {
+        val atRest = progress.filterKeys { it !in moving }
+        for ((key, spot) in BoardGeometry.layout(atRest, viewer)) {
             val token = tokens.getValue(key)
             val target = spot.point.toOffset()
             if (token.pos == target && token.scale == spot.scale) continue
             launch {
                 val startPos = token.pos
                 val startScale = token.scale
-                animate(0f, 1f, animationSpec = tween(SETTLE_MILLIS)) { t, _ ->
+                animate(0f, 1f, animationSpec = tween(millis)) { t, _ ->
                     token.pos = lerp(startPos, target, t)
                     token.scale = startScale + (spot.scale - startScale) * t
                 }
@@ -387,12 +436,22 @@ class GameAnimator(
         }
     }
 
+    /** After an update: every token takes the place the new state gives it. */
+    private suspend fun settle(game: RoomGame) {
+        progress.putAll(progressOf(game))
+        moving.clear()
+        relayout(SETTLE_MILLIS)
+    }
+
+    private fun progressOf(game: RoomGame): Map<TokenKey, Int> =
+        PlayerColor.entries.flatMap { c -> (0 until TOKENS_PER_PLAYER).map { i -> TokenKey(c, i) to game.state.tokensOf(c)[i] } }.toMap()
+
     /** After an update: the die goes to whoever rolls next, and a pill says whose turn it is. */
     private fun afterStep(prev: RoomGame, next: RoomGame) {
         val s = next.state
         if (s.phase == Phase.OVER) return
         if (s.phase == Phase.ROLL) {
-            if (s.turn != dieOwner) moveDieTo(s.turn) else dice.getValue(s.turn).face = null
+            if (s.turn != dieOwner) moveDieTo(s.turn) else dice.getValue(s.turn).rest(null)
         }
         if (s.turn != prev.state.turn) {
             if (s.turn == viewer) {
@@ -406,7 +465,10 @@ class GameAnimator(
 
     /** Jumps straight to [game] without animating (reconnect, new game, long backlog). */
     private fun snap(game: RoomGame) {
-        localRoll?.cancel()
+        myRoll.snapped(game.version)
+        syncRoll()
+        progress.putAll(progressOf(game))
+        moving.clear()
         for ((key, spot) in BoardGeometry.layout(game.state, viewer)) {
             tokens.getValue(key).apply {
                 pos = spot.point.toOffset()
@@ -424,7 +486,7 @@ class GameAnimator(
 
     private fun showDieFor(game: RoomGame) {
         dieOwner = game.state.turn
-        dice.forEach { (color, die) -> die.face = if (color == game.state.turn) game.state.dice else null }
+        dice.forEach { (color, die) -> die.rest(if (color == game.state.turn) game.state.dice else null) }
     }
 
     /** Pill background for a player (yellow uses its darker shade so white text stays readable). */
@@ -434,12 +496,14 @@ class GameAnimator(
     private fun androidx.compose.ui.unit.Dp.px() = with(density) { toPx() }
 
     private companion object {
-        const val TUMBLE_MILLIS = 600L
-        const val MIN_LANDING_TUMBLE_MILLIS = 200L
-        const val LOCAL_ROLL_TIMEOUT_NANOS = 5_000_000_000L
+        /** Tumble part of the roll; with the landing the whole roll is about 900 ms. */
+        const val TUMBLE_MILLIS = 700
+        const val LANDING_MILLIS = 200
         const val NO_MOVE_HOLD_MILLIS = 1_000L
         const val HOP_MILLIS = 140
         const val SETTLE_MILLIS = 160
+        /** How fast a stack rearranges when a token leaves or arrives. */
+        const val RESTACK_MILLIS = 120
         /** More waiting updates than this and we stop animating and jump to the latest. */
         const val MAX_BACKLOG = 3
     }

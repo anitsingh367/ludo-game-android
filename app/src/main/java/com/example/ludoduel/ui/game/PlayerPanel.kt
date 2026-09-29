@@ -10,9 +10,10 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
@@ -46,8 +47,8 @@ import kotlin.math.sin
 
 /**
  * A player's card, placed next to their own corner of the board: avatar with the turn timer ring,
- * name, and the dice box. The active player's card is full brightness, slightly larger and glowing;
- * the waiting player's card is dimmed.
+ * name, and the dice box. Both players' cards are the same size and style; only the brightness
+ * shows whose turn it is (the waiting player's card is dimmed).
  *
  * [mirrored] puts the dice box on the left and the avatar on the right (for the top-right card).
  */
@@ -64,35 +65,36 @@ fun PlayerPanel(
     diceBox: @Composable () -> Unit,
 ) {
     val colors = LocalLudoPalette.current.of(color)
-    val scale by animateFloatAsState(if (active) 1.05f else 1f, tween(250), label = "panelScale")
     val alpha by animateFloatAsState(if (active) 1f else 0.55f, tween(250), label = "panelAlpha")
-    val shape = RoundedCornerShape(22.dp)
+    val shape = RoundedCornerShape(18.dp)
     Row(
         modifier
-            .graphicsLayer { scaleX = scale; scaleY = scale; this.alpha = alpha }
-            .shadow(if (active) 18.dp else 4.dp, shape, clip = false, ambientColor = colors.main, spotColor = colors.main)
+            .fillMaxWidth(PANEL_WIDTH)
+            .height(PANEL_HEIGHT)
+            .graphicsLayer { this.alpha = alpha }
+            .shadow(6.dp, shape, clip = false, ambientColor = colors.main, spotColor = colors.main)
             .background(Brush.linearGradient(listOf(colors.main, colors.dark)), shape)
-            .border(2.dp, Color.White.copy(alpha = if (active) 0.7f else 0.25f), shape)
-            .padding(horizontal = 12.dp, vertical = 10.dp),
+            .border(2.dp, Color.White.copy(alpha = 0.55f), shape)
+            .padding(horizontal = 8.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         val avatar = @Composable { Avatar(name, color, active, deadline, now) }
         val label = @Composable {
             Column(
-                Modifier.width(118.dp),
+                Modifier.weight(1f),
                 horizontalAlignment = if (mirrored) Alignment.End else Alignment.Start,
             ) {
                 Text(
                     name,
                     color = Color.White,
-                    fontSize = 20.sp,
+                    fontSize = 18.sp,
                     fontWeight = FontWeight.ExtraBold,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     textAlign = if (mirrored) TextAlign.End else TextAlign.Start,
                 )
-                Text(subtitle, color = Color.White.copy(alpha = 0.85f), fontSize = 13.sp, maxLines = 1)
+                Text(subtitle, color = Color.White.copy(alpha = 0.85f), fontSize = 12.sp, maxLines = 1)
             }
         }
         if (mirrored) {
@@ -103,24 +105,27 @@ fun PlayerPanel(
     }
 }
 
+private val PANEL_HEIGHT = 64.dp
+private const val PANEL_WIDTH = 0.86f
+
 /** Circular avatar with the player's initial, surrounded by the turn timer ring when active. */
 @Composable
 private fun Avatar(name: String, color: PlayerColor, active: Boolean, deadline: Long, now: () -> Long) {
     val colors = LocalLudoPalette.current.of(color)
-    Box(Modifier.size(64.dp), contentAlignment = Alignment.Center) {
+    Box(Modifier.size(52.dp), contentAlignment = Alignment.Center) {
         if (active) TimerRing(deadline, now, Modifier.fillMaxSize())
         Box(
             Modifier
-                .size(50.dp)
-                .shadow(4.dp, CircleShape)
+                .size(40.dp)
+                .shadow(3.dp, CircleShape)
                 .background(Brush.radialGradient(listOf(colors.light, colors.main)), CircleShape)
-                .border(3.dp, Color.White, CircleShape),
+                .border(2.5.dp, Color.White, CircleShape),
             contentAlignment = Alignment.Center,
         ) {
             Text(
                 name.trim().firstOrNull()?.uppercase() ?: "?",
                 color = colors.dark,
-                fontSize = 24.sp,
+                fontSize = 20.sp,
                 fontWeight = FontWeight.ExtraBold,
             )
         }
@@ -168,10 +173,10 @@ fun DiceBox(active: Boolean, modifier: Modifier = Modifier, content: @Composable
     val shape = RoundedCornerShape(16.dp)
     Box(
         modifier
-            .size(64.dp)
+            .size(52.dp)
             .background(if (active) Color.White.copy(alpha = 0.22f) else Color.Black.copy(alpha = 0.18f), shape)
             .border(2.dp, Color.White.copy(alpha = if (active) 0.6f else 0.2f), shape)
-            .padding(6.dp),
+            .padding(4.dp),
         contentAlignment = Alignment.Center,
     ) { content() }
 }

@@ -37,6 +37,7 @@ class SoundFx(context: Context) : GameFx {
 
     private val ids: Map<Sfx, Int> = mapOf(
         Sfx.ROLL to R.raw.sfx_roll,
+        Sfx.CLACK to R.raw.sfx_clack,
         Sfx.HOP to R.raw.sfx_hop,
         Sfx.CAPTURE to R.raw.sfx_capture,
         Sfx.HOME to R.raw.sfx_home,
@@ -65,6 +66,7 @@ class SoundFx(context: Context) : GameFx {
         if (!vibrationOn || !vibrator.hasVibrator()) return
         val effect = when (kind) {
             Buzz.ROLL -> VibrationEffect.createOneShot(18, 70)
+            Buzz.PICK -> VibrationEffect.createOneShot(12, 60)
             Buzz.CAPTURE -> VibrationEffect.createOneShot(45, 180)
             Buzz.HOME -> VibrationEffect.createWaveform(longArrayOf(0, 30, 60, 40), intArrayOf(0, 140, 0, 200), -1)
         }

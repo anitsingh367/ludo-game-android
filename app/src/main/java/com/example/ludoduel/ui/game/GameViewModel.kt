@@ -43,6 +43,7 @@ data class GameUi(
     val opponentLeft: Boolean = false,
     val iWantRematch: Boolean = false,
     val opponentWantsRematch: Boolean = false,
+    val luckyBoost: Boolean = false,
 )
 
 /**
@@ -84,11 +85,15 @@ class GameViewModel(private val c: AppContainer, saved: SavedStateHandle) : View
 
     fun serverNow(): Long = c.clock.now()
 
-    fun roll() {
+    /** Sends my roll. [onResult] is told whether the roll was written (false: ignored or refused). */
+    fun roll(onResult: (Boolean) -> Unit) {
         val ui = ui.value
-        val game = ui.game ?: return
-        if (!ui.canRoll) return
-        viewModelScope.launch { act(game, Action.Roll(Dice.roll())) }
+        val game = ui.game
+        if (game == null || !ui.canRoll) {
+            onResult(false)
+            return
+        }
+        viewModelScope.launch { onResult(act(game, Action.Roll(rollValue(game)))) }
     }
 
     fun move(token: Int) {
@@ -125,6 +130,13 @@ class GameViewModel(private val c: AppContainer, saved: SavedStateHandle) : View
     }
 
     private fun seats(): Seats? = (room.value as? RoomEvent.Loaded)?.room?.seats
+
+    /** My roll for [game], with the room's Lucky Boost setting (see [Dice.rollFor]). */
+    private fun rollValue(game: RoomGame): Int {
+        val loaded = checkNotNull((room.value as? RoomEvent.Loaded)?.room)
+        val me = checkNotNull(loaded.seats?.colorOf(checkNotNull(uid.value)))
+        return Dice.rollFor(game.state, me, loaded.luckyBoost)
+    }
 
     private suspend fun act(game: RoomGame, action: Action): Boolean {
         val seats = seats() ?: return false
@@ -174,6 +186,7 @@ class GameViewModel(private val c: AppContainer, saved: SavedStateHandle) : View
             opponentLeft = r.status == RoomStatus.ABANDONED,
             iWantRematch = r.rematch[id] == game.gameNumber,
             opponentWantsRematch = r.rematch[opponentUid] == game.gameNumber,
+            luckyBoost = r.luckyBoost,
         )
     }
 
@@ -199,7 +212,7 @@ class GameViewModel(private val c: AppContainer, saved: SavedStateHandle) : View
                 Phase.ROLL -> {
                     // My time ran out with the app open: roll for me.
                     waitUntil(game.turnDeadline)
-                    act(game, Action.Roll(Dice.roll(), auto = true))
+                    act(game, Action.Roll(rollValue(game), auto = true))
                 }
                 Phase.MOVE -> {
                     val legal = LudoEngine.legalMoves(s, input.me, checkNotNull(s.dice))
@@ -209,11 +222,6 @@ class GameViewModel(private val c: AppContainer, saved: SavedStateHandle) : View
                         last?.type == ActionType.ROLL && last.by == input.me && last.auto -> {
                             delay(AUTO_MOVE_DELAY_MILLIS)
                             act(game, Action.Move(legal.first(), auto = true))
-                        }
-                        // Only one choice: play it if the player doesn't tap it first.
-                        legal.size == 1 -> {
-                            delay(SINGLE_MOVE_DELAY_MILLIS)
-                            act(game, Action.Move(legal.single()))
                         }
                         else -> {
                             waitUntil(game.turnDeadline)
@@ -250,7 +258,6 @@ class GameViewModel(private val c: AppContainer, saved: SavedStateHandle) : View
     }
 
     private companion object {
-        const val SINGLE_MOVE_DELAY_MILLIS = 1_500L
         const val AUTO_MOVE_DELAY_MILLIS = 800L
         const val TIMEOUT_MARGIN_MILLIS = 1_000L
         const val TIMEOUT_RETRY_MILLIS = 2_000L

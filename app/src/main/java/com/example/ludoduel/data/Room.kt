@@ -2,7 +2,8 @@ package com.example.ludoduel.data
 
 import com.example.ludoduel.engine.PlayerColor
 
-const val SCHEMA_VERSION = 1L
+/** 2: adds Lucky Boost (room `luckyBoost`, game `noSixStreak`). Rooms of version 1 cannot be joined. */
+const val SCHEMA_VERSION = 2L
 const val ROOM_LIFETIME_MILLIS = 24 * 60 * 60 * 1000L
 
 enum class RoomStatus { WAITING, PLAYING, FINISHED, ABANDONED }
@@ -22,6 +23,8 @@ data class Room(
     val hostUid: String,
     val guestUid: String?,
     val status: RoomStatus,
+    /** The Lucky Boost room setting (chosen by the host when creating the room). */
+    val luckyBoost: Boolean,
     val players: Map<String, Player>,
     /** Null while waiting for a guest, or when [gameCorrupt] is true. */
     val game: RoomGame?,
@@ -55,16 +58,19 @@ data class Room(
                 )
             }.toMap()
             val expiresAt = (m["expiresAt"] as? Number)?.toLong() ?: return null
+            val schemaVersion = (m["schemaVersion"] as? Number)?.toLong() ?: 0L
             val rawGame = m["game"]
             val game = guestUid?.let { GameCodec.decode(rawGame, Seats(hostUid, it)) }
             return Room(
                 code = code,
                 // A missing version is treated as "unknown", which shows the "please update" message.
-                schemaVersion = (m["schemaVersion"] as? Number)?.toLong() ?: 0L,
+                schemaVersion = schemaVersion,
                 expiresAt = expiresAt,
                 hostUid = hostUid,
                 guestUid = guestUid,
                 status = status,
+                // Only rooms of this app's schema version have (and must have) the setting.
+                luckyBoost = if (schemaVersion == SCHEMA_VERSION) m["luckyBoost"] as? Boolean ?: return null else false,
                 players = players,
                 game = game,
                 gameCorrupt = rawGame != null && game == null,

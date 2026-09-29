@@ -45,9 +45,45 @@ data class PawnLook(
 )
 
 /**
- * A 3D-looking map-pin pawn standing on [base] (the square's center): a round head with a pointed
- * foot, a radial gradient in the player's color, a shine on the top left, a dark outline and an
- * oval shadow on the board. [letter] is drawn on the head in colorblind mode.
+ * Pawn measurements, in board squares, for a pawn at scale 1 standing on a square whose center is
+ * (0, 0) (y grows downwards). Drawing, the "stays inside its square" test and the lift limits all use
+ * these numbers, so they cannot drift apart.
+ */
+object PawnShape {
+    const val HEAD_R = 0.28f
+    const val HEAD_Y = -0.11f
+    const val TIP_Y = 0.31f
+    const val BASE_Y = 0.33f
+    const val BASE_RX = 0.42f
+    const val BASE_RY = 0.12f
+    const val SHADOW_Y = 0.37f
+    const val SHADOW_RX = 0.44f
+    const val SHADOW_RY = 0.085f
+    /** How far a movable pawn bobs up. Small, so the pawn stays inside its square. */
+    const val BOB = 0.09f
+    /** The glow ring under a movable pawn at its widest. */
+    const val GLOW_RX = 0.46f
+    const val GLOW_RY = 0.14f
+    /** Half the outline width plus a little room for antialiasing. */
+    private const val EDGE = 0.02f
+
+    /**
+     * Everything a pawn at [scale] may draw at rest or while bobbing (head, base, shadow, glow ring),
+     * relative to its square's center, in squares.
+     */
+    fun envelope(scale: Float) = Rect(
+        left = -GLOW_RX * scale,
+        top = (HEAD_Y - HEAD_R - BOB - EDGE) * scale,
+        right = GLOW_RX * scale,
+        bottom = maxOf(BASE_Y + GLOW_RY, SHADOW_Y + SHADOW_RY) * scale,
+    )
+}
+
+/**
+ * A classic pin pawn standing on [base] (the square's center): a pearl-white pin with a glossy ball
+ * in the player's color in its head, a white highlight, and a matching base disc with a thin dark
+ * ring. The shadow stays on the board and shrinks while the pawn is in the air.
+ * [letter] is drawn on the ball in colorblind mode.
  */
 fun DrawScope.drawPawn(
     base: Offset,
@@ -58,25 +94,30 @@ fun DrawScope.drawPawn(
     textMeasurer: TextMeasurer,
 ) {
     val s = unit * look.scale
-    val maxLift = unit * 0.45f
-    val liftFraction = (look.liftPx / maxLift).coerceIn(0f, 1f)
+    val liftFraction = (look.liftPx / (unit * 0.45f)).coerceIn(0f, 1f)
+    val ink = Color(0xFF2B2320)
 
-    // Shadow on the board: smaller and lighter while the pawn is in the air.
-    val shadowW = s * 0.62f * (1f - 0.45f * liftFraction)
-    val shadowH = s * 0.2f * (1f - 0.45f * liftFraction)
+    // Shadow and base disc stay on the board.
+    val shadowW = 2 * PawnShape.SHADOW_RX * s * (1f - 0.45f * liftFraction)
+    val shadowH = 2 * PawnShape.SHADOW_RY * s * (1f - 0.45f * liftFraction)
     drawOval(
-        Color.Black.copy(alpha = 0.32f * (1f - 0.5f * liftFraction)),
-        topLeft = base + Offset(-shadowW / 2, s * 0.36f - shadowH / 2),
+        Color.Black.copy(alpha = 0.28f * (1f - 0.5f * liftFraction)),
+        topLeft = base + Offset(-shadowW / 2, PawnShape.SHADOW_Y * s - shadowH / 2),
         size = Size(shadowW, shadowH),
     )
+    val discTopLeft = base + Offset(-PawnShape.BASE_RX * s, (PawnShape.BASE_Y - PawnShape.BASE_RY) * s)
+    val discSize = Size(2 * PawnShape.BASE_RX * s, 2 * PawnShape.BASE_RY * s)
+    drawOval(colors.main, discTopLeft, discSize)
+    drawOval(colors.light.copy(alpha = 0.6f), discTopLeft + Offset(discSize.width * 0.2f, discSize.height * 0.12f), Size(discSize.width * 0.6f, discSize.height * 0.45f))
+    drawOval(ink.copy(alpha = 0.8f), discTopLeft, discSize, style = Stroke(s * 0.035f))
 
-    val tip = base + Offset(0f, s * 0.38f - look.liftPx)
-    val r = s * 0.34f
-    val head = base + Offset(0f, -s * 0.16f - look.liftPx)
+    val tip = base + Offset(0f, PawnShape.TIP_Y * s - look.liftPx)
+    val r = PawnShape.HEAD_R * s
+    val head = base + Offset(0f, PawnShape.HEAD_Y * s - look.liftPx)
     val sx = 1f + 0.14f * look.squash
     val sy = 1f - 0.18f * look.squash
     scale(sx, sy, pivot = tip) {
-        // Pin outline: straight sides from the tip to the tangent points on the head.
+        // The pin: straight sides from the tip to the tangent points on the head circle.
         val d = hypot(tip.x - head.x, tip.y - head.y)
         val alpha = Math.toDegrees(acos((r / d).toDouble())).toFloat()
         val pin = Path().apply {
@@ -84,30 +125,28 @@ fun DrawScope.drawPawn(
             arcTo(Rect(head, r), 90f + alpha, 360f - 2 * alpha, false)
             close()
         }
-        drawPath(
-            pin,
-            Brush.radialGradient(
-                listOf(colors.light, colors.main, colors.dark),
-                center = head + Offset(-r * 0.35f, -r * 0.45f),
-                radius = r * 2.6f,
-            ),
+        drawPath(pin, Brush.linearGradient(listOf(Color.White, Color(0xFFE6E2DA), Color(0xFFB9B3A8)), head - Offset(r, r), tip + Offset(r, 0f)))
+        drawPath(pin, ink.copy(alpha = 0.85f), style = Stroke(s * 0.035f))
+        // The glossy colored ball in the head.
+        val ballR = r * 0.68f
+        drawCircle(
+            Brush.radialGradient(listOf(colors.light, colors.main, colors.dark), center = head - Offset(ballR * 0.35f, ballR * 0.4f), radius = ballR * 1.7f),
+            ballR,
+            head,
         )
-        drawPath(pin, colors.dark, style = Stroke(s * 0.055f))
-        // A lighter cap on the head, like a game piece.
-        drawCircle(Brush.radialGradient(listOf(Color.White, colors.light), center = head - Offset(r * 0.15f, r * 0.2f), radius = r * 0.7f), r * 0.5f, head)
-        drawCircle(colors.dark.copy(alpha = 0.35f), r * 0.5f, head, style = Stroke(s * 0.03f))
-        // Shine on the top left.
-        rotate(-35f, head + Offset(-r * 0.45f, -r * 0.52f)) {
+        drawCircle(ink.copy(alpha = 0.5f), ballR, head, style = Stroke(s * 0.02f))
+        // White highlight.
+        rotate(-35f, head + Offset(-ballR * 0.4f, -ballR * 0.45f)) {
             drawOval(
-                Color.White.copy(alpha = 0.85f),
-                topLeft = head + Offset(-r * 0.45f - r * 0.24f, -r * 0.52f - r * 0.12f),
-                size = Size(r * 0.48f, r * 0.24f),
+                Color.White.copy(alpha = 0.9f),
+                topLeft = head + Offset(-ballR * 0.4f - ballR * 0.3f, -ballR * 0.45f - ballR * 0.15f),
+                size = Size(ballR * 0.6f, ballR * 0.3f),
             )
         }
         if (letter != null) {
             val layout = textMeasurer.measure(
                 letter,
-                TextStyle(color = colors.dark, fontSize = (r * 0.95f).toSp(), fontWeight = FontWeight.ExtraBold, fontFamily = Baloo),
+                TextStyle(color = Color.White, fontSize = (ballR * 1.2f).toSp(), fontWeight = FontWeight.ExtraBold, fontFamily = Baloo),
             )
             drawText(layout, topLeft = head - Offset(layout.size.width / 2f, layout.size.height / 2f))
         }

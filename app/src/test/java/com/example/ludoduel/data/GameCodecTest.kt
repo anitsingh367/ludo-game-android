@@ -31,6 +31,7 @@ class GameCodecTest {
         assertEquals("h", m["turnUid"])
         assertEquals("ROLL", m["phase"])
         assertEquals(mapOf("h" to 0L, "g" to 0L), m["missedTurns"])
+        assertEquals(mapOf("h" to 0L, "g" to 0L), m["noSixStreak"])
         val last = m["lastAction"] as Map<*, *>
         assertEquals("move", last["type"])
         assertEquals("h", last["byUid"])
@@ -52,6 +53,7 @@ class GameCodecTest {
         val m = GameCodec.encode(played(), seats).toMutableMap()
         assertNull(GameCodec.decode(m.toMutableMap().also { it["turnUid"] = "x" }, seats))
         assertNull(GameCodec.decode(m.toMutableMap().also { it.remove("version") }, seats))
+        assertNull(GameCodec.decode(m.toMutableMap().also { it.remove("noSixStreak") }, seats))
         assertNull(GameCodec.decode(m.toMutableMap().also { it["phase"] = "DANCE" }, seats))
         assertNull(GameCodec.decode(m.toMutableMap().also { it["dice"] = 9L; it["phase"] = "MOVE" }, seats))
         assertNull(GameCodec.decode(null, seats))
@@ -60,8 +62,8 @@ class GameCodecTest {
 
     @Test fun `room decode flags a corrupt game`() {
         val raw = mapOf(
-            "schemaVersion" to 1L, "expiresAt" to 5L, "hostUid" to "h", "guestUid" to "g",
-            "status" to "playing",
+            "schemaVersion" to 2L, "expiresAt" to 5L, "hostUid" to "h", "guestUid" to "g",
+            "status" to "playing", "luckyBoost" to true,
             "players" to mapOf(
                 "h" to mapOf("color" to "red", "name" to "Ann", "connected" to true, "lastSeen" to 1L),
                 "g" to mapOf("color" to "yellow", "name" to "Bo", "connected" to false, "lastSeen" to 2L),
@@ -84,7 +86,7 @@ class GameCodecTest {
 
     @Test fun `waiting room without guest decodes`() {
         val raw = mapOf(
-            "schemaVersion" to 1L, "expiresAt" to 5L, "hostUid" to "h", "status" to "waiting",
+            "schemaVersion" to 2L, "expiresAt" to 5L, "hostUid" to "h", "status" to "waiting", "luckyBoost" to false,
             "players" to mapOf("h" to mapOf("color" to "red", "name" to "Ann", "connected" to true, "lastSeen" to 1L)),
         )
         val room = Room.decode("ABC234", raw)!!
@@ -93,5 +95,17 @@ class GameCodecTest {
         assertFalse(room.gameCorrupt)
         assertNull(Room.decode("ABC234", null))
         assertNull(Room.decode("ABC234", raw - "hostUid"))
+    }
+
+    @Test fun `a new room needs the Lucky Boost setting, an older room still decodes`() {
+        val raw = mapOf(
+            "schemaVersion" to 2L, "expiresAt" to 5L, "hostUid" to "h", "status" to "waiting", "luckyBoost" to true,
+            "players" to mapOf("h" to mapOf("color" to "red", "name" to "Ann", "connected" to true, "lastSeen" to 1L)),
+        )
+        assertTrue(Room.decode("ABC234", raw)!!.luckyBoost)
+        assertNull(Room.decode("ABC234", raw - "luckyBoost"))
+        // A room from the previous app version decodes (so the app can say "Please update").
+        val old = Room.decode("ABC234", raw - "luckyBoost" + ("schemaVersion" to 1L))!!
+        assertEquals(1L, old.schemaVersion)
     }
 }

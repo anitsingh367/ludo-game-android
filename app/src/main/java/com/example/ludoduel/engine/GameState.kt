@@ -45,6 +45,12 @@ data class GameState(
     val sixesInRow: Int,
     val missedRed: Int,
     val missedYellow: Int,
+    /**
+     * Lucky Boost counters: rolls in a row without a 6 while the player had no token on the board
+     * (all in the yard, or finished). Any 6, or a token on the board, resets it to 0.
+     */
+    val noSixRed: Int,
+    val noSixYellow: Int,
     val winner: PlayerColor?,
     val winReason: WinReason?,
     val lastAction: LastAction?,
@@ -53,11 +59,19 @@ data class GameState(
 
     fun missedOf(color: PlayerColor): Int = if (color == PlayerColor.RED) missedRed else missedYellow
 
+    fun noSixOf(color: PlayerColor): Int = if (color == PlayerColor.RED) noSixRed else noSixYellow
+
+    /** True when [color] has a token on the board (shared track or home column). */
+    fun hasTokenOnBoard(color: PlayerColor): Boolean = tokensOf(color).any { it in 0 until HOME }
+
     internal fun withTokens(color: PlayerColor, tokens: List<Int>): GameState =
         if (color == PlayerColor.RED) copy(red = tokens) else copy(yellow = tokens)
 
     internal fun withMissed(color: PlayerColor, missed: Int): GameState =
         if (color == PlayerColor.RED) copy(missedRed = missed) else copy(missedYellow = missed)
+
+    internal fun withNoSix(color: PlayerColor, streak: Int): GameState =
+        if (color == PlayerColor.RED) copy(noSixRed = streak) else copy(noSixYellow = streak)
 
     companion object {
         fun initial(first: PlayerColor): GameState = GameState(
@@ -69,6 +83,8 @@ data class GameState(
             sixesInRow = 0,
             missedRed = 0,
             missedYellow = 0,
+            noSixRed = 0,
+            noSixYellow = 0,
             winner = null,
             winReason = null,
             lastAction = null,
