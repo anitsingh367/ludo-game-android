@@ -89,17 +89,19 @@ class GameViewModel(private val c: AppContainer, saved: SavedStateHandle) : View
 
     /**
      * Sends my roll. [onResult] is told whether a roll is on its way (false: ignored or refused).
-     * My tap is remembered for this turn: if the timer's automatic roll is being written at the same
-     * moment, my tap still wins (that roll counts as mine and no automatic move follows it, see
+     * If the timer's automatic roll is being written at the same moment, my tap still wins: it is
+     * remembered for this turn (that roll counts as mine and no automatic move follows it, see
      * [playTimers]), and the die waits for that roll.
      */
     fun roll(onResult: (Boolean) -> Unit) {
         val ui = ui.value
         val game = ui.game
         val myRoll = game != null && game.state.turn == ui.me && game.state.phase == Phase.ROLL
-        if (myRoll) rollTappedAt = game.version
         when {
-            myRoll && busy.value -> onResult(true)
+            myRoll && busy.value -> {
+                rollTappedAt = game.version
+                onResult(true)
+            }
             game == null || !ui.canRoll -> onResult(false)
             else -> viewModelScope.launch { onResult(act(game, Action.Roll(rollValue(game)))) }
         }

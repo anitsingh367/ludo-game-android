@@ -133,8 +133,8 @@ object BoardGeometry {
      * Where each of the given tokens (key -> progress) is drawn, in the viewer's orientation.
      * Only tokens at rest should be passed in: a token in the middle of a move is not part of any
      * stack. Tokens sharing a square are shrunk and arranged so each one is fully visible and stays
-     * inside the square: 2 side by side (60%), 3-4 in a 2x2 (50%), 5-8 in a 3x3 (33%, only possible
-     * on a safe square holding both colors). Finished tokens sit on their color's finish spot.
+     * inside the square: 2 side by side (60%), 3-4 in a 2x2 (50%), 5-8 in a 3x3 (33%, when both
+     * colors share a square). Finished tokens sit on their color's finish spot.
      */
     fun layout(positions: Map<TokenKey, Int>, viewer: PlayerColor): Map<TokenKey, TokenSpot> {
         val result = mutableMapOf<TokenKey, TokenSpot>()

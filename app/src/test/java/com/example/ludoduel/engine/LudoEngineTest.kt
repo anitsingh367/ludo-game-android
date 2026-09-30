@@ -317,6 +317,9 @@ class LudoEngineTest {
         assertFalse(LudoEngine.isValid(state(phase = Phase.MOVE, dice = null)))
         assertFalse(LudoEngine.isValid(state(phase = Phase.MOVE, dice = 7)))
         assertFalse(LudoEngine.isValid(state(phase = Phase.OVER)))
+        // A move with nothing that can move (a modified app could write it): invalid, not a crash.
+        assertFalse(LudoEngine.isValid(state(phase = Phase.MOVE, dice = 2)))
+        assertTrue(LudoEngine.isValid(state(red = listOf(5, -1, -1, -1), phase = Phase.MOVE, dice = 2)))
     }
 
     @Test fun `dice rolls stay in range`() {

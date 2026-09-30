@@ -232,8 +232,9 @@ private fun GameContent(
     val movable = if (caughtUp) ui.movable else emptyList()
     val canRoll = caughtUp && ui.canRoll
     // Exactly one token can move: move it by itself shortly after the dice has landed (the player
-    // sees the number first). Board taps do nothing meanwhile.
-    val autoToken = if (caughtUp) LudoEngine.onlyMovableToken(s, ui.me) else null
+    // sees the number first). Board taps do nothing meanwhile. Only while a move can be sent (online,
+    // no write running), so a move that could not be sent is tried again when it can.
+    val autoToken = if (caughtUp) LudoEngine.onlyMovableToken(s, ui.me)?.takeIf { it in movable } else null
     LaunchedEffect(autoToken, shown.version) {
         if (autoToken != null) {
             delay(AUTO_MOVE_DELAY_MILLIS)

@@ -52,7 +52,8 @@ object LudoEngine {
             list.size == TOKENS_PER_PLAYER && list.all { it in YARD..HOME }
         }
         val diceOk = when (state.phase) {
-            Phase.MOVE -> state.dice in 1..6
+            // A MOVE state always has a legal move: with none, the engine passes the turn.
+            Phase.MOVE -> state.dice?.let { it in 1..6 && legalMoves(state, state.turn, it).isNotEmpty() } == true
             else -> state.dice == null
         }
         val winnerOk = (state.phase == Phase.OVER) == (state.winner != null && state.winReason != null)
