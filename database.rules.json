@@ -30,18 +30,19 @@
         ".read": "auth != null && (!data.exists() || data.child('hostUid').val() === auth.uid || data.child('guestUid').val() === auth.uid)",
 
         // Create a room: only if the code is free, the creator is the host, there is no guest
-        // yet, the status is "waiting", the schema version is 3, the Lucky Boost setting is
+        // yet, the status is "waiting", the schema version is 4, the Lucky Boost setting is
         // chosen, there is no game yet, and the times are sane (created within 5 minutes of server
         // time, expires 24 hours later).
         // Existing rooms can never be replaced or deleted through this rule.
-        ".write": "auth != null && !data.exists() && newData.child('hostUid').val() === auth.uid && !newData.child('guestUid').exists() && newData.child('status').val() === 'waiting' && newData.child('schemaVersion').val() === 3 && newData.child('luckyBoost').isBoolean() && !newData.child('game').exists() && !newData.child('rematch').exists() && newData.child('createdAt').isNumber() && newData.child('createdAt').val() > now - 300000 && newData.child('createdAt').val() < now + 300000 && newData.child('expiresAt').val() === newData.child('createdAt').val() + 86400000 && newData.child('players').child(auth.uid).exists()",
+        ".write": "auth != null && !data.exists() && newData.child('hostUid').val() === auth.uid && !newData.child('guestUid').exists() && newData.child('status').val() === 'waiting' && newData.child('schemaVersion').val() === 4 && newData.child('luckyBoost').isBoolean() && !newData.child('game').exists() && !newData.child('rematch').exists() && newData.child('createdAt').isNumber() && newData.child('createdAt').val() > now - 300000 && newData.child('createdAt').val() < now + 300000 && newData.child('expiresAt').val() === newData.child('createdAt').val() + 86400000 && newData.child('players').child(auth.uid).exists()",
 
-        // Public: the app shows "Please update the app" when this is not 3. Never changes.
+        // Public: the app shows "Please update the app" when this is not 4. Never changes.
         // (2 added Lucky Boost: the room's luckyBoost setting and the game's noSixStreak.
-        // 3 replaced blocks with safe pairs: a rules change, so both phones must match.)
+        // 3 replaced blocks with safe pairs: a rules change, so both phones must match.
+        // 4 added chat and emoji reactions.)
         "schemaVersion": {
           ".read": "auth != null",
-          ".validate": "newData.isNumber() && newData.val() === 3"
+          ".validate": "newData.isNumber() && newData.val() === 4"
         },
         // The Lucky Boost room setting. Set once when the room is created (see the room ".write").
         "luckyBoost": {
@@ -247,9 +248,64 @@
           }
         },
 
+        // Chat and emoji reactions. Only the two players can read or write. A message is written
+        // once and never changed. Each message has a sequence number (seq); chatSeq is the number
+        // of the last one and goes up by exactly 1 in the same write that adds a message. A message
+        // can be deleted only when it is outside the last 50 (seq <= chatSeq - 50): the app deletes
+        // the oldest ones in the same write that adds a new one. (Rules cannot count children,
+        // so the sequence number is what makes "only trimming" checkable.)
+        "chatSeq": {
+          ".write": "auth != null && (auth.uid === root.child('rooms').child($code).child('hostUid').val() || auth.uid === root.child('rooms').child($code).child('guestUid').val())",
+          ".validate": "newData.isNumber() && ((!data.exists() && newData.val() === 1) || (data.exists() && newData.val() === data.val() + 1))"
+        },
+        "chat": {
+          ".read": "auth != null && (auth.uid === root.child('rooms').child($code).child('hostUid').val() || auth.uid === root.child('rooms').child($code).child('guestUid').val())",
+          "$msgId": {
+            ".write": "auth != null && (auth.uid === root.child('rooms').child($code).child('hostUid').val() || auth.uid === root.child('rooms').child($code).child('guestUid').val()) && ((!data.exists() && newData.exists()) || (data.exists() && !newData.exists() && data.child('seq').val() <= newData.parent().parent().child('chatSeq').val() - 50))",
+            // Text and phrase messages carry text; emoji messages carry an emoji id.
+            ".validate": "newData.hasChildren(['uid', 'type', 'seq', 'sentAt']) && newData.child('seq').val() === newData.parent().parent().child('chatSeq').val() && ((newData.child('type').val() === 'emoji' && newData.hasChild('emojiId') && !newData.hasChild('text')) || (newData.child('type').val() !== 'emoji' && newData.hasChild('text') && !newData.hasChild('emojiId')))",
+            // Nobody can send as the other player.
+            "uid": {
+              ".validate": "newData.val() === auth.uid"
+            },
+            "type": {
+              ".validate": "newData.val() === 'text' || newData.val() === 'emoji' || newData.val() === 'phrase'"
+            },
+            "text": {
+              ".validate": "newData.isString() && newData.val().length >= 1 && newData.val().length <= 100"
+            },
+            // One of the 16 bundled animated emojis (Unicode code points).
+            "emojiId": {
+              ".validate": "newData.isString() && newData.val().matches(/^(1f602|1f60d|1f60e|1f914|1f62e|1f622|1f621|1f608|1f44e|1f44f|1f64f|1f525|1f389|1f480|1f91e|1f44b)$/)"
+            },
+            "seq": {
+              ".validate": "newData.isNumber()"
+            },
+            // The server time of the write.
+            "sentAt": {
+              ".validate": "newData.val() === now"
+            },
+            "$other": {
+              ".validate": false
+            }
+          }
+        },
+
         // No other fields are allowed in a room.
         "$other": {
           ".validate": false
+        }
+      }
+    },
+
+    // Chat reports: write-only. A signed-in player of the room can file a report once; nobody can
+    // read reports through the app (only you, in the Firebase console).
+    "reports": {
+      "$reportId": {
+        ".write": "auth != null && !data.exists() && newData.child('reporterUid').val() === auth.uid && (root.child('rooms').child(newData.child('roomCode').val()).child('hostUid').val() === auth.uid || root.child('rooms').child(newData.child('roomCode').val()).child('guestUid').val() === auth.uid)",
+        ".validate": "newData.hasChildren(['roomCode', 'reporterUid', 'reportedUid', 'createdAt']) && newData.child('roomCode').isString() && newData.child('reportedUid').isString() && newData.child('reportedUid').val() !== auth.uid",
+        "createdAt": {
+          ".validate": "newData.val() === now"
         }
       }
     }

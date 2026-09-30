@@ -62,7 +62,7 @@ class GameCodecTest {
 
     @Test fun `room decode flags a corrupt game`() {
         val raw = mapOf(
-            "schemaVersion" to 3L, "expiresAt" to 5L, "hostUid" to "h", "guestUid" to "g",
+            "schemaVersion" to 4L, "expiresAt" to 5L, "hostUid" to "h", "guestUid" to "g",
             "status" to "playing", "luckyBoost" to true,
             "players" to mapOf(
                 "h" to mapOf("color" to "red", "name" to "Ann", "connected" to true, "lastSeen" to 1L),
@@ -86,7 +86,7 @@ class GameCodecTest {
 
     @Test fun `waiting room without guest decodes`() {
         val raw = mapOf(
-            "schemaVersion" to 3L, "expiresAt" to 5L, "hostUid" to "h", "status" to "waiting", "luckyBoost" to false,
+            "schemaVersion" to 4L, "expiresAt" to 5L, "hostUid" to "h", "status" to "waiting", "luckyBoost" to false,
             "players" to mapOf("h" to mapOf("color" to "red", "name" to "Ann", "connected" to true, "lastSeen" to 1L)),
         )
         val room = Room.decode("ABC234", raw)!!
@@ -99,7 +99,7 @@ class GameCodecTest {
 
     @Test fun `a new room needs the Lucky Boost setting, an older room still decodes`() {
         val raw = mapOf(
-            "schemaVersion" to 3L, "expiresAt" to 5L, "hostUid" to "h", "status" to "waiting", "luckyBoost" to true,
+            "schemaVersion" to 4L, "expiresAt" to 5L, "hostUid" to "h", "status" to "waiting", "luckyBoost" to true,
             "players" to mapOf("h" to mapOf("color" to "red", "name" to "Ann", "connected" to true, "lastSeen" to 1L)),
         )
         assertTrue(Room.decode("ABC234", raw)!!.luckyBoost)

@@ -40,7 +40,7 @@ const room = (uid, sub = '') => db(uid).ref(`rooms/${CODE}${sub}`);
 
 function newRoom(now = Date.now(), host = HOST) {
   return {
-    schemaVersion: 3,
+    schemaVersion: 4,
     createdAt: now,
     expiresAt: now + DAY,
     hostUid: host,
@@ -114,8 +114,8 @@ test('room creation checks every field', async () => {
   await assertFails(room(HOST).set(newRoom(now, STRANGER))); // host must be the creator
   await assertFails(room(HOST).set({ ...newRoom(now), guestUid: GUEST }));
   await assertFails(room(HOST).set({ ...newRoom(now), status: 'playing' }));
-  await assertFails(room(HOST).set({ ...newRoom(now), schemaVersion: 2 })); // older app
-  await assertFails(room(HOST).set({ ...newRoom(now), schemaVersion: 4 }));
+  await assertFails(room(HOST).set({ ...newRoom(now), schemaVersion: 3 })); // older app
+  await assertFails(room(HOST).set({ ...newRoom(now), schemaVersion: 5 }));
   const noBoost = newRoom(now);
   delete noBoost.luckyBoost;
   await assertFails(room(HOST).set(noBoost)); // the Lucky Boost setting must be chosen
@@ -412,4 +412,94 @@ test('noSixStreak is required and must be a whole number, 0 or more', async () =
   await assertFails(room(HOST, '/game').set(afterRoll(6, { noSixStreak: { [HOST]: 1.5, [GUEST]: 0 } })));
   await assertFails(room(HOST, '/game').set(afterRoll(6, { noSixStreak: { [HOST]: 0, [GUEST]: 0, [STRANGER]: 2 } })));
   await assertSucceeds(room(HOST, '/game').set(afterRoll(6, { noSixStreak: { [HOST]: 4, [GUEST]: 0 } })));
+});
+
+// ---------- Chat and emoji reactions ----------
+
+const SERVER_TIME = { '.sv': 'timestamp' };
+const chat = (uid, id = '') => room(uid, `/chat${id ? '/' + id : ''}`);
+const text = (uid, seq, t = 'Good luck!') => ({ uid, type: 'text', text: t, seq, sentAt: SERVER_TIME });
+const emoji = (uid, seq, emojiId = '1f602') => ({ uid, type: 'emoji', emojiId, seq, sentAt: SERVER_TIME });
+/** Sends one message the way the app does: the message and chatSeq + 1 in one update. */
+const send = (uid, id, msg, extra = {}) => room(uid).update({ [`chat/${id}`]: msg, chatSeq: msg.seq, ...extra });
+
+test('the new schema version is accepted and the old one refused', async () => {
+  await assertSucceeds(room(HOST).set({ ...newRoom(), schemaVersion: 4 }));
+  await env.clearDatabase();
+  await assertFails(room(HOST).set({ ...newRoom(), schemaVersion: 3 }));
+});
+
+test('only the two players can read or write the chat', async () => {
+  await seedPlaying();
+  await assertSucceeds(send(HOST, 'm1', text(HOST, 1)));
+  await assertSucceeds(send(GUEST, 'm2', emoji(GUEST, 2)));
+  await assertSucceeds(chat(GUEST).once('value'));
+  await assertFails(chat(STRANGER).once('value'));
+  await assertFails(send(STRANGER, 'm3', text(STRANGER, 3)));
+  await assertFails(send(null, 'm4', text(HOST, 3)));
+});
+
+test('a player cannot send as the other player', async () => {
+  await seedPlaying();
+  await assertFails(send(HOST, 'm1', text(GUEST, 1)));
+  await assertFails(send(GUEST, 'm2', emoji(HOST, 1)));
+});
+
+test('text is 1 to 100 characters; the type decides which fields are present', async () => {
+  await seedPlaying();
+  await assertSucceeds(send(HOST, 'a', text(HOST, 1, 'x'.repeat(100))));
+  await assertFails(send(HOST, 'b', text(HOST, 2, 'x'.repeat(101))));
+  await assertFails(send(HOST, 'c', text(HOST, 2, '')));
+  await assertSucceeds(send(HOST, 'd', { uid: HOST, type: 'phrase', text: 'Nice move!', seq: 2, sentAt: SERVER_TIME }));
+  await assertFails(send(HOST, 'e', { uid: HOST, type: 'shout', text: 'hi', seq: 3, sentAt: SERVER_TIME }));
+  await assertFails(send(HOST, 'f', { ...emoji(HOST, 3), text: 'hi' }));
+  await assertFails(send(HOST, 'g', { uid: HOST, type: 'text', emojiId: '1f602', seq: 3, sentAt: SERVER_TIME }));
+  await assertFails(send(HOST, 'h', { ...text(HOST, 3), extra: 1 }));
+});
+
+test('an unknown emoji id is refused', async () => {
+  await seedPlaying();
+  await assertSucceeds(send(HOST, 'a', emoji(HOST, 1, '1f44b')));
+  await assertFails(send(HOST, 'b', emoji(HOST, 2, '1f4a9')));
+  await assertFails(send(HOST, 'c', emoji(HOST, 2, '1f602x')));
+});
+
+test('sentAt must be the server time, and seq must be the new chatSeq', async () => {
+  await seedPlaying();
+  await assertFails(send(HOST, 'a', { ...text(HOST, 1), sentAt: Date.now() - 60000 }));
+  await assertFails(room(HOST).update({ 'chat/b': text(HOST, 1), chatSeq: 2 })); // chatSeq must go 0 -> 1
+  await assertFails(room(HOST).update({ 'chat/c': text(HOST, 5), chatSeq: 1 })); // seq must equal chatSeq
+  await assertSucceeds(send(HOST, 'd', text(HOST, 1)));
+  await assertFails(send(GUEST, 'e', text(GUEST, 1))); // two senders at once: the second must retry
+  await assertSucceeds(send(GUEST, 'e', text(GUEST, 2)));
+});
+
+test('messages cannot be edited, and can be deleted only when outside the last 50', async () => {
+  await seedPlaying();
+  await assertSucceeds(send(HOST, 'm1', text(HOST, 1)));
+  await assertFails(chat(HOST, 'm1').set(text(HOST, 1, 'changed')));
+  await assertFails(chat(HOST, 'm1/text').set('changed'));
+  await assertFails(chat(HOST, 'm1').remove());
+  // Messages 1..50 exist; sending message 51 may delete message 1 in the same write.
+  const many = {};
+  for (let i = 1; i <= 50; i++) many[`k${String(i).padStart(2, '0')}`] = { uid: HOST, type: 'text', text: `m${i}`, seq: i, sentAt: Date.now() };
+  await seed(many, '/chat');
+  await seed(50, '/chatSeq');
+  await assertFails(send(GUEST, 'k51', text(GUEST, 51), { 'chat/k02': null })); // 2 is still in the last 50
+  await assertSucceeds(send(GUEST, 'k51', text(GUEST, 51), { 'chat/k01': null }));
+  await assertFails(room(GUEST).update({ 'chat/k02': null })); // deleting without sending
+});
+
+test('reports are write-only, by a player of the room, about the other player', async () => {
+  await seedPlaying();
+  const report = (reporter, reported) => ({
+    roomCode: CODE, reporterUid: reporter, reportedUid: reported,
+    messages: [{ uid: reported, type: 'text', text: 'rude', sentAt: 1 }], createdAt: SERVER_TIME,
+  });
+  await assertSucceeds(db(HOST).ref('reports/r1').set(report(HOST, GUEST)));
+  await assertFails(db(HOST).ref('reports/r1').once('value'));
+  await assertFails(db(HOST).ref('reports/r1').set(report(HOST, GUEST))); // cannot overwrite
+  await assertFails(db(STRANGER).ref('reports/r2').set(report(STRANGER, GUEST)));
+  await assertFails(db(HOST).ref('reports/r3').set(report(GUEST, HOST))); // as someone else
+  await assertFails(db(null).ref('reports/r4').set(report(HOST, GUEST)));
 });

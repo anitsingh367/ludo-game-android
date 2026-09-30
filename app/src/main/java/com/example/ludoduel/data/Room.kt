@@ -5,9 +5,10 @@ import com.example.ludoduel.engine.PlayerColor
 /**
  * 2: adds Lucky Boost (room `luckyBoost`, game `noSixStreak`).
  * 3: safe pairs replace blocks (a rules change: both phones must play the same rules).
+ * 4: adds chat and emoji reactions (room `chat` and `chatSeq`).
  * Rooms of an older version cannot be joined.
  */
-const val SCHEMA_VERSION = 3L
+const val SCHEMA_VERSION = 4L
 const val ROOM_LIFETIME_MILLIS = 24 * 60 * 60 * 1000L
 
 enum class RoomStatus { WAITING, PLAYING, FINISHED, ABANDONED }
@@ -36,6 +37,10 @@ data class Room(
     val gameCorrupt: Boolean,
     /** uid -> the gameNumber that player asked a rematch for. */
     val rematch: Map<String, Long>,
+    /** Chat messages, oldest first (at most the last [ChatRules.KEEP]). */
+    val chat: List<ChatMessage>,
+    /** Sequence number of the last chat message (0 before the first). */
+    val chatSeq: Long,
 ) {
     val seats: Seats? get() = guestUid?.let { Seats(hostUid, it) }
 
@@ -80,6 +85,10 @@ data class Room(
                 gameCorrupt = rawGame != null && game == null,
                 rematch = (m["rematch"] as? Map<*, *>).orEmpty()
                     .mapNotNull { (k, v) -> (v as? Number)?.let { k as String to it.toLong() } }.toMap(),
+                chat = (m["chat"] as? Map<*, *>).orEmpty()
+                    .mapNotNull { (id, v) -> ChatMessage.decode(id as String, v) }
+                    .sortedBy { it.seq },
+                chatSeq = (m["chatSeq"] as? Number)?.toLong() ?: 0L,
             )
         }
     }

@@ -269,6 +269,72 @@ class RoomRepository(private val db: FirebaseDatabase, private val clock: Server
     }
 
     /**
+     * Sends one chat message: the message with the next sequence number and `chatSeq` + 1 in one
+     * update, deleting the messages that fall outside the last [ChatRules.KEEP] in the same write.
+     * [chat] and [chatSeq] are the room as last seen. If the other player sent at the same moment
+     * the rules refuse the write (the sequence number is taken); then the latest `chatSeq` is read
+     * and it is tried again. Returns true when the message was written.
+     */
+    suspend fun sendChat(
+        code: String,
+        uid: String,
+        type: ChatType,
+        text: String?,
+        emojiId: String?,
+        chat: List<ChatMessage>,
+        chatSeq: Long,
+    ): Boolean {
+        val room = roomRef(code)
+        val id = room.child("chat").push().key ?: return false
+        var seq = chatSeq + 1
+        repeat(SEND_ATTEMPTS) {
+            val message = buildMap {
+                put("uid", uid)
+                put("type", type.key)
+                text?.let { put("text", it) }
+                emojiId?.let { put("emojiId", it) }
+                put("seq", seq)
+                put("sentAt", ServerValue.TIMESTAMP)
+            }
+            val update = buildMap<String, Any?> {
+                put("chat/$id", message)
+                put("chatSeq", seq)
+                ChatRules.toTrim(chat, seq).forEach { put("chat/$it", null) }
+            }
+            try {
+                withTimeout(NETWORK_TIMEOUT_MILLIS) { room.updateChildren(update).await() }
+                return true
+            } catch (e: Exception) {
+                val latest = runCatching {
+                    withTimeout(NETWORK_TIMEOUT_MILLIS) { room.child("chatSeq").get().await().value }
+                }.getOrNull() as? Number ?: return false
+                seq = latest.toLong() + 1
+            }
+        }
+        return false
+    }
+
+    /** Files a report about [reportedUid] with the last messages of the room. */
+    suspend fun report(code: String, reporterUid: String, reportedUid: String, messages: List<ChatMessage>) {
+        val report = mapOf(
+            "roomCode" to code,
+            "reporterUid" to reporterUid,
+            "reportedUid" to reportedUid,
+            "messages" to messages.map { m ->
+                buildMap {
+                    put("uid", m.uid)
+                    put("type", m.type.key)
+                    m.text?.let { put("text", it) }
+                    m.emojiId?.let { put("emojiId", it) }
+                    put("sentAt", m.sentAt)
+                }
+            },
+            "createdAt" to ServerValue.TIMESTAMP,
+        )
+        withTimeout(NETWORK_TIMEOUT_MILLIS) { db.getReference("reports").push().setValue(report).await() }
+    }
+
+    /**
      * Keeps `players/{uid}/connected` up to date while the caller is collecting. Every time the
      * connection comes back, onDisconnect is registered again and connected is set to true.
      * Runs until cancelled; then it marks the player as disconnected.
@@ -292,5 +358,6 @@ class RoomRepository(private val db: FirebaseDatabase, private val clock: Server
     private companion object {
         const val CREATE_ATTEMPTS = 5
         const val NETWORK_TIMEOUT_MILLIS = 15_000L
+        const val SEND_ATTEMPTS = 3
     }
 }
