@@ -40,7 +40,7 @@ const room = (uid, sub = '') => db(uid).ref(`rooms/${CODE}${sub}`);
 
 function newRoom(now = Date.now(), host = HOST) {
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     createdAt: now,
     expiresAt: now + DAY,
     hostUid: host,
@@ -114,8 +114,8 @@ test('room creation checks every field', async () => {
   await assertFails(room(HOST).set(newRoom(now, STRANGER))); // host must be the creator
   await assertFails(room(HOST).set({ ...newRoom(now), guestUid: GUEST }));
   await assertFails(room(HOST).set({ ...newRoom(now), status: 'playing' }));
-  await assertFails(room(HOST).set({ ...newRoom(now), schemaVersion: 1 })); // older app
-  await assertFails(room(HOST).set({ ...newRoom(now), schemaVersion: 3 }));
+  await assertFails(room(HOST).set({ ...newRoom(now), schemaVersion: 2 })); // older app
+  await assertFails(room(HOST).set({ ...newRoom(now), schemaVersion: 4 }));
   const noBoost = newRoom(now);
   delete noBoost.luckyBoost;
   await assertFails(room(HOST).set(noBoost)); // the Lucky Boost setting must be chosen

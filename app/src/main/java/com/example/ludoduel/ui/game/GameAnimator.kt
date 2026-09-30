@@ -54,7 +54,10 @@ class TokenVisual(position: Offset, scale: Float) {
 /** Texts for the messages the animations show (resolved from string resources by the screen). */
 data class AnimatorTexts(
     val plusOneTurn: String,
-    val noMoves: String,
+    /** "No moves" with the reason: yard tokens need a 6, home-column tokens need the exact number, or both. */
+    val noMovesSix: String,
+    val noMovesExact: String,
+    val noMovesBoth: String,
     val threeSixes: String,
     val captured: String,
     val yourTurn: String,
@@ -84,7 +87,7 @@ class GameAnimator(
     private val palette: LudoPalette,
 ) {
     var fx: GameFx = SilentFx
-    var texts = AnimatorTexts("", "", "", "", "", "%1\$s", "%1\$s", "", "")
+    var texts = AnimatorTexts("", "", "", "", "", "", "", "%1\$s", "%1\$s", "", "")
     /** The room's Lucky Boost setting (for the "Lucky Boost!" message). */
     var luckyBoost = false
     var nameOf: (PlayerColor) -> String = { "" }
@@ -233,7 +236,15 @@ class GameAnimator(
                 delay(500)
             }
             turnPassed -> {
-                pills.show(texts.noMoves, Color(0xFF546E7A))
+                // Nothing on the track stops a token, so only yard tokens (no 6) and home-column
+                // tokens (the roll would overshoot) can be stuck.
+                val stuck = prev.state.tokensOf(roller).filter { it != HOME }
+                val reason = when {
+                    stuck.all { it == YARD } -> texts.noMovesSix
+                    stuck.none { it == YARD } -> texts.noMovesExact
+                    else -> texts.noMovesBoth
+                }
+                pills.show(reason, Color(0xFF546E7A))
                 delay(NO_MOVE_HOLD_MILLIS)
             }
             value == 6 -> {

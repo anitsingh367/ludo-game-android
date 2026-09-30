@@ -34,13 +34,13 @@
         // chosen, there is no game yet, and the times are sane (created within 5 minutes of server
         // time, expires 24 hours later).
         // Existing rooms can never be replaced or deleted through this rule.
-        ".write": "auth != null && !data.exists() && newData.child('hostUid').val() === auth.uid && !newData.child('guestUid').exists() && newData.child('status').val() === 'waiting' && newData.child('schemaVersion').val() === 2 && newData.child('luckyBoost').isBoolean() && !newData.child('game').exists() && !newData.child('rematch').exists() && newData.child('createdAt').isNumber() && newData.child('createdAt').val() > now - 300000 && newData.child('createdAt').val() < now + 300000 && newData.child('expiresAt').val() === newData.child('createdAt').val() + 86400000 && newData.child('players').child(auth.uid).exists()",
+        ".write": "auth != null && !data.exists() && newData.child('hostUid').val() === auth.uid && !newData.child('guestUid').exists() && newData.child('status').val() === 'waiting' && newData.child('schemaVersion').val() === 3 && newData.child('luckyBoost').isBoolean() && !newData.child('game').exists() && !newData.child('rematch').exists() && newData.child('createdAt').isNumber() && newData.child('createdAt').val() > now - 300000 && newData.child('createdAt').val() < now + 300000 && newData.child('expiresAt').val() === newData.child('createdAt').val() + 86400000 && newData.child('players').child(auth.uid).exists()",
 
         // Public: the app shows "Please update the app" when this is not 2. Never changes.
         // (2 added Lucky Boost: the room's luckyBoost setting and the game's noSixStreak.)
         "schemaVersion": {
           ".read": "auth != null",
-          ".validate": "newData.isNumber() && newData.val() === 2"
+          ".validate": "newData.isNumber() && newData.val() === 3"
         },
         // The Lucky Boost room setting. Set once when the room is created (see the room ".write").
         "luckyBoost": {

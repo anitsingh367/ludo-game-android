@@ -2,8 +2,12 @@ package com.example.ludoduel.data
 
 import com.example.ludoduel.engine.PlayerColor
 
-/** 2: adds Lucky Boost (room `luckyBoost`, game `noSixStreak`). Rooms of version 1 cannot be joined. */
-const val SCHEMA_VERSION = 2L
+/**
+ * 2: adds Lucky Boost (room `luckyBoost`, game `noSixStreak`).
+ * 3: safe pairs replace blocks (a rules change: both phones must play the same rules).
+ * Rooms of an older version cannot be joined.
+ */
+const val SCHEMA_VERSION = 3L
 const val ROOM_LIFETIME_MILLIS = 24 * 60 * 60 * 1000L
 
 enum class RoomStatus { WAITING, PLAYING, FINISHED, ABANDONED }

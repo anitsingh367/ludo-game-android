@@ -23,9 +23,8 @@ paid Blaze plan.
   the next player's dice button stays disabled for 1.2 s (`ui/game/GameViewModel.kt`, `watchNotices`).
 - **A 6 with no legal move still passes the turn** (spec: "If the player has no legal move … the
   turn passes"). No extra roll is granted.
-- **Blocks** are 2 or more tokens of one color on one shared-track square, including safe squares
-  and start squares. A block on your start square keeps your tokens in the yard until it moves.
-  Tokens in a home column never form a block.
+- **Safe pairs** replaced blocks (a later rule change; see "Rule change: safe pairs replace blocks"
+  at the end). Nothing on the track stops a token any more.
 - **Opponent tokens on a safe square** can share it; nothing is captured there.
 - **Every action gets a fresh 30-second deadline** (rolling and moving are timed separately).
 - **Automatic play when your own timer runs out** (item 16): an automatic roll counts as a missed
@@ -152,15 +151,15 @@ paid Blaze plan.
 | 27 | 6 with all in yard → only bring-out moves | `LudoEngine.targetOf`; test 27 |
 | 28 | Exact roll to finish | `LudoEngine.targetOf`; test 28 |
 | 29 | Three 6s → cancelled, pass, reset | `LudoEngine.roll`; tests 29, 29b |
-| 30 | Capture rules (normal, safe, block) | `LudoEngine.move`; tests 30 |
-| 31 | Can't land on or pass a block | `LudoEngine.targetOf`; tests 31 |
-| 32 | Own stacking, blocks | tests 32 |
+| 30 | Capture rules (normal, safe, safe pair) | `LudoEngine.move`; tests 30 and "safe pair" |
+| 31 | Changed: no blocks. Tokens pass and share safe pairs | `LudoEngine.targetOf`; "safe pair" tests |
+| 32 | Own stacking, safe pairs | "safe pair" tests |
 | 33 | Capture + 6 = one extra turn | `LudoEngine.move` (`extraTurn`); test 33 |
 | 34 | Last token home ends game, no extra turn | `LudoEngine.move`; test 34 |
 | 35 | Yellow wrap 51 → 0 | `LudoEngine.absoluteSquare`; tests 35 |
 | 36 | Each color only in its own home column | progress 51..55 never maps to the shared track; tests 36; `BoardGeometryTest` |
 | 37 | Nobody can move → still passes | `LudoEngine.roll`; test 37 |
-| 38 | `schemaVersion` ≠ 2 (it was 1 before Lucky Boost) → "Please update the app" | `joinRoom` (`UpdateRequired`); `GameViewModel.buildUi` (`UPDATE_REQUIRED`) |
+| 38 | `schemaVersion` ≠ 3 (1 before Lucky Boost, 2 before safe pairs) → "Please update the app" | `joinRoom` (`UpdateRequired`); `GameViewModel.buildUi` (`UPDATE_REQUIRED`) |
 | 39 | Invalid game state → "Something went wrong with this game" + Home | `data/GameCodec.kt` `decode` + `LudoEngine.isValid`; `Room.gameCorrupt`; `GameScreen.kt` `ErrorPane`; `GameCodecTest` |
 | 40 | Anonymous sign-in, reused; retry screen when it fails | `data/AuthRepository.kt`; `ui/SplashScreen.kt` (retry) |
 | 41 | Game over: winner, reason, Rematch / Home | `GameScreen.kt` `GameOverCard` |
@@ -419,3 +418,35 @@ board you sent; the layout and all drawing are our own.
   token on the track or in the home column; over 1,000 random games with the boost on, nobody went
   more than 5 turns in the yard without a 6 (so the 6th turn at the latest brings one).
 
+## Rule change: safe pairs replace blocks (branch `safe-pairs`)
+
+Your instruction, after the fix-up round. It replaces the spec's block rule (section 4 "Blocks",
+edge cases 31 and 32).
+
+- **Safe pair:** two or more tokens of one color on one square. They cannot be captured, on any
+  square. They are not walls: any token may pass over them or land on their square, which is then
+  shared.
+- **Capture, only on landing:** the landing square must hold exactly one opponent token and must not
+  be a safe square (star or start). Two or more opponent tokens there: the square is shared, no
+  capture. If a pair later splits and leaves one opponent token sharing a normal square, nothing
+  happens until a token lands there again.
+- **Engine** (`LudoEngine.kt`): the block check is gone from `targetOf` (it now only needs the token's
+  progress and the roll), and `isOpponentBlock` is deleted. The capture code was already "exactly one
+  opponent token on a non-safe square" and did not change.
+- **Side effect:** a token on the shared track (progress 0..50) can now always move. "No moves" is
+  only possible for yard tokens without a 6 and for home-column tokens whose roll would overshoot.
+  This also removes the case where a blocked token made the app auto-move the only other token.
+- **"No moves" pill** now says why: "No moves — need a 6 to come out" (every token left is in the
+  yard), "No moves — need exact number to reach home" (every token left is in the home column), or
+  "No moves — need a 6 or exact number" (some of each; my wording, not given in the instruction).
+  Worked out in `GameAnimator.playRoll` from the roller's tokens before the roll.
+- **How to Play** explains safe pairs, and now says start squares are safe too (they always were).
+- **Both phones must play the same rules:** room `schemaVersion` is now **3**. Older versions show
+  "Please update the app" for version-3 rooms, and this version does the same for older rooms.
+  Security rules: room creation and `schemaVersion` need 3. **The rules must be deployed again.**
+- **Tests:** the block tests are deleted. New tests: passing over a pair (also coming out of the yard
+  onto a start square held by a pair), landing on an opponent pair on a normal square (shared), a
+  pair splitting and then a token landing on the single token left (captured), my pair being landed
+  on (shared), and "the player chooses when one token is behind an opponent pair". Landing on a
+  single opponent token is covered by the existing test 30. The 1,000-game random test passes with
+  the new rules. Rules tests: schema 3 accepted, 2 and 4 refused.

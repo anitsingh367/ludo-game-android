@@ -194,7 +194,9 @@ private fun GameContent(
     animator.fx = LocalGameFx.current
     animator.texts = AnimatorTexts(
         plusOneTurn = stringResource(R.string.fx_plus_one_turn),
-        noMoves = stringResource(R.string.fx_no_moves),
+        noMovesSix = stringResource(R.string.fx_no_moves_six),
+        noMovesExact = stringResource(R.string.fx_no_moves_exact),
+        noMovesBoth = stringResource(R.string.fx_no_moves_both),
         threeSixes = stringResource(R.string.fx_three_sixes),
         captured = stringResource(R.string.fx_captured),
         yourTurn = stringResource(R.string.fx_your_turn),

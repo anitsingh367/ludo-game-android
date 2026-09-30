@@ -14,7 +14,7 @@ object LudoEngine {
     fun legalMoves(state: GameState, color: PlayerColor, dice: Int): List<Int> {
         if (dice !in 1..6) return emptyList()
         val tokens = state.tokensOf(color)
-        return tokens.indices.filter { targetOf(state, color, tokens[it], dice) != null }
+        return tokens.indices.filter { targetOf(tokens[it], dice) != null }
     }
 
     /**
@@ -90,11 +90,12 @@ object LudoEngine {
         val tokens = state.tokensOf(actor)
         if (action.token !in tokens.indices) return fail("No such token")
         val from = tokens[action.token]
-        val to = targetOf(state, actor, from, dice) ?: return fail("That token cannot move")
+        val to = targetOf(from, dice) ?: return fail("That token cannot move")
 
         var next = state.withTokens(actor, tokens.toMutableList().also { it[action.token] = to })
 
-        // Capture: a single opponent token on a normal (not safe) square goes back to the yard.
+        // Capture, only when landing: a single opponent token on a normal (not safe) square goes back
+        // to the yard. Two or more opponent tokens are a safe pair: the square is shared.
         var captured: Int? = null
         if (to <= LAST_TRACK) {
             val square = absoluteSquare(actor, to)
@@ -102,7 +103,6 @@ object LudoEngine {
                 val opp = actor.opponent
                 val oppTokens = next.tokensOf(opp)
                 val hits = oppTokens.indices.filter { isOnSquare(opp, oppTokens[it], square) }
-                // Two or more opponent tokens would be a block, and targetOf already forbids that.
                 if (hits.size == 1) {
                     captured = hits[0]
                     next = next.withTokens(opp, oppTokens.toMutableList().also { it[hits[0]] = YARD })
@@ -146,26 +146,14 @@ object LudoEngine {
 
     /**
      * Where a token at [from] ends up after moving [dice] squares, or null if that move is illegal:
-     * leaving the yard needs a 6, finishing needs the exact number, and the token may not land on
-     * or pass an opponent block on the shared track.
+     * leaving the yard needs a 6 and finishing needs the exact number. Nothing on the track stops a
+     * token (safe pairs can be passed and shared).
      */
-    private fun targetOf(state: GameState, color: PlayerColor, from: Int, dice: Int): Int? {
+    private fun targetOf(from: Int, dice: Int): Int? {
         if (from == HOME) return null
-        if (from == YARD) {
-            if (dice != 6) return null
-            return if (isOpponentBlock(state, color, absoluteSquare(color, 0))) null else 0
-        }
+        if (from == YARD) return if (dice == 6) 0 else null
         val to = from + dice
-        if (to > HOME) return null
-        for (step in from + 1..minOf(to, LAST_TRACK)) {
-            if (isOpponentBlock(state, color, absoluteSquare(color, step))) return null
-        }
-        return to
-    }
-
-    private fun isOpponentBlock(state: GameState, color: PlayerColor, square: Int): Boolean {
-        val opp = color.opponent
-        return state.tokensOf(opp).count { isOnSquare(opp, it, square) } >= 2
+        return if (to > HOME) null else to
     }
 
     private fun isOnSquare(color: PlayerColor, progress: Int, square: Int): Boolean =

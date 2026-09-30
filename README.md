@@ -21,7 +21,7 @@ How to Play in the game).
 
 **After updating the app, deploy the security rules again** (`firebase deploy --only database`, or
 paste `database.rules.json` into the console). This version stores new fields (Lucky Boost) and
-rooms of schema version 2, which the old rules do not allow.
+rooms of schema version 3, which the old rules do not allow.
 
 ## Important: the build and `google-services.json`
 

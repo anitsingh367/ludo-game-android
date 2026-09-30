@@ -93,7 +93,7 @@ class LudoEngineTest {
         assertEquals(Phase.MOVE, s.phase)
     }
 
-    // 30. Capture on a normal square; no capture on safe squares; no capture of a block.
+    // 30. Capture on a normal square; no capture on safe squares.
     @Test fun `30 capture on a normal square sends the token home and gives an extra turn`() {
         val s = state(red = listOf(5, -1, -1, -1), yellow = listOf(yellowAt(10), -1, -1, -1))
         val next = s.act(Action.Roll(5)).act(Action.Move(0))
@@ -113,49 +113,56 @@ class LudoEngineTest {
         assertEquals(YELLOW, next.turn)
     }
 
-    @Test fun `30 a block cannot be captured`() {
+    // Safe pairs: two or more tokens of one color on a square cannot be captured, but they are not
+    // walls. Any token may pass them or land on their square (the square is then shared).
+    @Test fun `safe pair - tokens pass over an opponent pair`() {
+        val s = state(red = listOf(5, -1, -1, -1), yellow = listOf(yellowAt(7), yellowAt(7), -1, -1))
+        val next = s.act(Action.Roll(4)).act(Action.Move(0))
+        assertEquals(9, next.red[0])
+        assertEquals(listOf(yellowAt(7), yellowAt(7), -1, -1), next.yellow)
+        // Coming out of the yard onto a start square held by an opponent pair is allowed too.
+        val start = state(yellow = listOf(yellowAt(0), yellowAt(0), -1, -1))
+        assertEquals(listOf(0, 1, 2, 3), LudoEngine.legalMoves(start, RED, 6))
+    }
+
+    @Test fun `safe pair - landing on an opponent pair on a normal square shares it`() {
         val s = state(red = listOf(5, -1, -1, -1), yellow = listOf(yellowAt(10), yellowAt(10), -1, -1))
-        assertTrue(LudoEngine.legalMoves(s, RED, 5).isEmpty())
-        val next = s.act(Action.Roll(5))
-        assertEquals(YELLOW, next.turn)
+        val next = s.act(Action.Roll(5)).act(Action.Move(0))
+        assertEquals(10, next.red[0])
         assertEquals(listOf(yellowAt(10), yellowAt(10), -1, -1), next.yellow)
+        assertNull(next.lastAction?.captured)
+        assertEquals(YELLOW, next.turn) // no capture, so no extra turn
     }
 
-    // 31. Moving past or onto an opponent block is illegal.
-    @Test fun `31 cannot move past or onto an opponent block`() {
-        val s = state(red = listOf(5, 30, -1, -1), yellow = listOf(yellowAt(7), yellowAt(7), -1, -1))
-        assertEquals(listOf(1), LudoEngine.legalMoves(s, RED, 4)) // token 0 would pass square 7
-        assertEquals(listOf(1), LudoEngine.legalMoves(s, RED, 2)) // token 0 would land on 7
-        assertEquals(listOf(0, 1), LudoEngine.legalMoves(s, RED, 1))
-        assertTrue(s.copy(phase = Phase.MOVE, dice = 4).rejects(Action.Move(0)))
+    @Test fun `safe pair - after a pair splits, landing on the single token left captures it`() {
+        val s = state(red = listOf(5, 7, -1, -1), yellow = listOf(yellowAt(10), yellowAt(10), -1, -1))
+        // Red shares the pair's square.
+        val shared = s.act(Action.Roll(5)).act(Action.Move(0))
+        // Yellow splits the pair. The single yellow token left next to red is not captured.
+        val split = shared.act(Action.Roll(3)).act(Action.Move(0))
+        assertEquals(yellowAt(13), split.yellow[0])
+        assertEquals(yellowAt(10), split.yellow[1])
+        assertEquals(10, split.red[0])
+        assertNull(split.lastAction?.captured)
+        // Red lands another token there: exactly one yellow token, not a safe square -> captured.
+        val captured = split.act(Action.Roll(3)).act(Action.Move(1))
+        assertEquals(listOf(10, 10, -1, -1), captured.red)
+        assertEquals(-1, captured.yellow[1])
+        assertEquals(1, captured.lastAction?.captured)
+        assertEquals(RED, captured.turn)
     }
 
-    @Test fun `31 a block on the start square keeps tokens in the yard`() {
-        val s = state(yellow = listOf(yellowAt(0), yellowAt(0), -1, -1))
-        assertTrue(LudoEngine.legalMoves(s, RED, 6).isEmpty())
-        assertEquals(YELLOW, s.act(Action.Roll(6)).turn)
-    }
-
-    @Test fun `31 a block of the mover's own color does not stop it`() {
-        val s = state(red = listOf(5, 7, 7, -1))
-        assertEquals(listOf(0, 1, 2), LudoEngine.legalMoves(s, RED, 4))
-    }
-
-    // 32. Own tokens can stack; two own tokens form a block.
-    @Test fun `32 own tokens stack and form a block for the opponent`() {
+    @Test fun `safe pair - my pair is shared when the opponent lands on it`() {
         val s = state(red = listOf(3, 5, -1, -1), yellow = listOf(yellowAt(1), -1, -1, -1))
-        val stacked = s.act(Action.Roll(2)).act(Action.Move(0))
-        assertEquals(listOf(5, 5, -1, -1), stacked.red)
-        assertEquals(YELLOW, stacked.turn)
-        // Yellow at square 1 cannot pass or land on the red block at 5.
-        assertTrue(LudoEngine.legalMoves(stacked, YELLOW, 4).isEmpty())
-        assertEquals(listOf(1, 2, 3), LudoEngine.legalMoves(stacked, YELLOW, 6)) // only yard tokens
-        assertEquals(listOf(0), LudoEngine.legalMoves(stacked, YELLOW, 3))
-    }
-
-    @Test fun `32 tokens in the home column never form a block`() {
-        val s = state(red = listOf(52, 52, -1, -1), yellow = listOf(yellowAt(49), -1, -1, -1))
-        assertEquals(listOf(0), LudoEngine.legalMoves(s, YELLOW, 5)) // passes squares 50, 51, 0, 1
+        // Red makes a pair on square 5 (a normal square).
+        val pair = s.act(Action.Roll(2)).act(Action.Move(0))
+        assertEquals(listOf(5, 5, -1, -1), pair.red)
+        // Yellow lands on it: both red tokens stay, nothing is captured.
+        val next = pair.act(Action.Roll(4)).act(Action.Move(0))
+        assertEquals(yellowAt(5), next.yellow[0])
+        assertEquals(listOf(5, 5, -1, -1), next.red)
+        assertNull(next.lastAction?.captured)
+        assertEquals(RED, next.turn)
     }
 
     // 33. Extra turn from capture + 6 in the same move is only one extra turn.
@@ -195,13 +202,6 @@ class LudoEngineTest {
         assertEquals(-1, next.red[0])
     }
 
-    @Test fun `35 a red block after the wrap stops yellow`() {
-        val s = state(red = listOf(1, 1, -1, -1), yellow = listOf(yellowAt(50), -1, -1, -1), turn = YELLOW)
-        assertTrue(LudoEngine.legalMoves(s, YELLOW, 3).isEmpty())
-        assertTrue(LudoEngine.legalMoves(s, YELLOW, 4).isEmpty())
-        assertEquals(listOf(0), LudoEngine.legalMoves(s, YELLOW, 2))
-    }
-
     // 36. Yellow never enters Red's home column and vice versa.
     @Test fun `36 each color only enters its own home column`() {
         // Yellow passes red's home entry (square 50) and stays on the shared track.
@@ -236,19 +236,6 @@ class LudoEngineTest {
             s = s.act(Action.Roll(3))
             assertEquals(who.opponent, s.turn)
             assertEquals(Phase.ROLL, s.phase)
-        }
-        // Both colors blocked: every roll still passes the turn.
-        var blocked = state(red = listOf(0, 0, -1, -1), yellow = listOf(yellowAt(0 + 2), yellowAt(2), -1, -1))
-        repeat(6) { i ->
-            val roll = 1 + i
-            val who = blocked.turn
-            val next = blocked.act(Action.Roll(roll))
-            if (next.phase == Phase.MOVE) {
-                blocked = next.act(Action.Move(LudoEngine.legalMoves(next, who, roll).first()))
-            } else {
-                assertEquals(who.opponent, next.turn)
-                blocked = next
-            }
         }
     }
 
@@ -348,9 +335,10 @@ class LudoEngineTest {
         assertEquals(1, LudoEngine.onlyMovableToken(s, RED))
     }
 
-    @Test fun `only movable token - a token behind an opponent block cannot move`() {
+    @Test fun `player chooses when one token is behind an opponent pair`() {
         val s = state(red = listOf(5, 30, 56, 56), yellow = listOf(yellowAt(7), yellowAt(7), -1, -1)).act(Action.Roll(4))
-        assertEquals(1, LudoEngine.onlyMovableToken(s, RED))
+        assertEquals(listOf(0, 1), LudoEngine.legalMoves(s, RED, 4))
+        assertNull(LudoEngine.onlyMovableToken(s, RED))
     }
 
     @Test fun `player chooses when two or more tokens can move`() {
