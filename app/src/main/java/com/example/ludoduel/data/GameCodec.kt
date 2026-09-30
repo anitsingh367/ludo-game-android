@@ -29,6 +29,10 @@ object GameCodec {
                 "missedTurns",
                 mapOf(seats.hostUid to s.missedRed.toLong(), seats.guestUid to s.missedYellow.toLong()),
             )
+            put(
+                "noSixStreak",
+                mapOf(seats.hostUid to s.noSixRed.toLong(), seats.guestUid to s.noSixYellow.toLong()),
+            )
             put("turnDeadline", game.turnDeadline)
             s.lastAction?.let { put("lastAction", encodeAction(it, seats)) }
             s.winner?.let { put("winnerUid", seats.uidOf(it)) }
@@ -52,6 +56,7 @@ object GameCodec {
         val m = raw as? Map<*, *> ?: return null
         val tokens = m["tokens"] as? Map<*, *> ?: return null
         val missed = m["missedTurns"] as? Map<*, *> ?: return null
+        val noSix = m["noSixStreak"] as? Map<*, *> ?: return null
         val state = GameState(
             red = intList(tokens["red"]) ?: return null,
             yellow = intList(tokens["yellow"]) ?: return null,
@@ -61,6 +66,8 @@ object GameCodec {
             sixesInRow = int(m["sixesInRow"]) ?: return null,
             missedRed = int(missed[seats.hostUid]) ?: return null,
             missedYellow = int(missed[seats.guestUid]) ?: return null,
+            noSixRed = int(noSix[seats.hostUid]) ?: return null,
+            noSixYellow = int(noSix[seats.guestUid]) ?: return null,
             winner = (m["winnerUid"] as? String)?.let { seats.colorOf(it) ?: return null },
             winReason = (m["winReason"] as? String)?.let { enumOrNull<WinReason>(it.uppercase()) ?: return null },
             lastAction = m["lastAction"]?.let { decodeAction(it, seats) ?: return null },

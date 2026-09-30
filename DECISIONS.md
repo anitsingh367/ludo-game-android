@@ -23,9 +23,8 @@ paid Blaze plan.
   the next player's dice button stays disabled for 1.2 s (`ui/game/GameViewModel.kt`, `watchNotices`).
 - **A 6 with no legal move still passes the turn** (spec: "If the player has no legal move … the
   turn passes"). No extra roll is granted.
-- **Blocks** are 2 or more tokens of one color on one shared-track square, including safe squares
-  and start squares. A block on your start square keeps your tokens in the yard until it moves.
-  Tokens in a home column never form a block.
+- **Safe pairs** replaced blocks (a later rule change; see "Rule change: safe pairs replace blocks"
+  at the end). Nothing on the track stops a token any more.
 - **Opponent tokens on a safe square** can share it; nothing is captured there.
 - **Every action gets a fresh 30-second deadline** (rolling and moving are timed separately).
 - **Automatic play when your own timer runs out** (item 16): an automatic roll counts as a missed
@@ -152,15 +151,15 @@ paid Blaze plan.
 | 27 | 6 with all in yard → only bring-out moves | `LudoEngine.targetOf`; test 27 |
 | 28 | Exact roll to finish | `LudoEngine.targetOf`; test 28 |
 | 29 | Three 6s → cancelled, pass, reset | `LudoEngine.roll`; tests 29, 29b |
-| 30 | Capture rules (normal, safe, block) | `LudoEngine.move`; tests 30 |
-| 31 | Can't land on or pass a block | `LudoEngine.targetOf`; tests 31 |
-| 32 | Own stacking, blocks | tests 32 |
+| 30 | Capture rules (normal, safe, safe pair) | `LudoEngine.move`; tests 30 and "safe pair" |
+| 31 | Changed: no blocks. Tokens pass and share safe pairs | `LudoEngine.targetOf`; "safe pair" tests |
+| 32 | Own stacking, safe pairs | "safe pair" tests |
 | 33 | Capture + 6 = one extra turn | `LudoEngine.move` (`extraTurn`); test 33 |
 | 34 | Last token home ends game, no extra turn | `LudoEngine.move`; test 34 |
 | 35 | Yellow wrap 51 → 0 | `LudoEngine.absoluteSquare`; tests 35 |
 | 36 | Each color only in its own home column | progress 51..55 never maps to the shared track; tests 36; `BoardGeometryTest` |
 | 37 | Nobody can move → still passes | `LudoEngine.roll`; test 37 |
-| 38 | `schemaVersion` ≠ 1 → "Please update the app" | `joinRoom` (`UpdateRequired`); `GameViewModel.buildUi` (`UPDATE_REQUIRED`) |
+| 38 | `schemaVersion` ≠ 3 (1 before Lucky Boost, 2 before safe pairs) → "Please update the app" | `joinRoom` (`UpdateRequired`); `GameViewModel.buildUi` (`UPDATE_REQUIRED`) |
 | 39 | Invalid game state → "Something went wrong with this game" + Home | `data/GameCodec.kt` `decode` + `LudoEngine.isValid`; `Room.gameCorrupt`; `GameScreen.kt` `ErrorPane`; `GameCodecTest` |
 | 40 | Anonymous sign-in, reused; retry screen when it fails | `data/AuthRepository.kt`; `ui/SplashScreen.kt` (retry) |
 | 41 | Game over: winner, reason, Rematch / Home | `GameScreen.kt` `GameOverCard` |
@@ -298,3 +297,205 @@ Everything else that changed is display code:
 - `AndroidManifest.xml`: the `VIBRATE` permission.
 - Resources: the font, the sounds, new strings. Plus `tools/generate_sounds.py`, `licenses/`,
   `ASSETS.md`, and UI tests (`BoardGeometryTest`, new `PickTokenTest`).
+
+## Fix-up round (branch `fixup-round`)
+
+The version before this round is tagged `redesign-v1`. Changes, in the order of the brief:
+
+### 1. Bigger board, thin border, compact panels
+
+- The thick gold frame is now a 3 dp dark-brown border (`#5A3E2B`, 6 dp corners, soft shadow); the
+  board is the full width minus 8 dp on each side.
+- Both player panels are the same size and style (64 dp tall, 86% of the width); only the brightness
+  shows whose turn it is (no more 1.05x scale or glow for the active one). They sit 10 dp from the
+  board; spare height goes above the top panel and below the bottom panel only.
+
+### 2. Bigger tokens, precise touch, automatic single moves
+
+- Pawn measurements live in one place (`PawnShape` in `ui/game/TokenPainter.kt`): about 90% of a
+  square, standing on a base disc. Everything a pawn draws at rest or while bobbing (head, base,
+  shadow, glow ring) fits inside its own square, so the bob is small (9% of a square). A hop along
+  the top row is not lifted above the board's edge. `TokenBoundsTest` checks every track square,
+  home-column square and yard slot for both colors in both views, every stack size, and the finish
+  spot.
+- Smart tap (`pickToken` in `LudoBoard.kt`): the nearest token that can legally move within 1.5
+  squares; tokens that cannot move are ignored completely. Tokens on the same square (or all in the
+  yard) make the same move, so they count as one candidate. If two candidates on different squares
+  are within 0.3 squares of each other in distance, both grow to 1.3x and a second tap decides.
+  A short vibration confirms the pick. No landing squares, captures or safe squares are ever
+  previewed.
+- Exactly one token with a legal move (`LudoEngine.onlyMovableToken`, counting tokens) moves by
+  itself 0.5 s after the dice has landed; board taps do nothing meanwhile. Two or more (including a
+  six with all four in the yard, or two tokens on one square) means the player chooses. This
+  replaced the ViewModel's 1.5-second single-move timer. The 30-second timeout auto-play is
+  unchanged, so the game still moves on when the app is in the background.
+
+### 3. The dice bug ("rolling forever")
+
+**Root cause (from reading the code; it could not be reproduced).** The old roll had two separate
+things driving my die. A tap started an optimistic "local tumble": a loop that kept changing the face
+until either the confirmed roll reached the animation queue and found the loop still running, a snap
+cancelled it, or a 5-second timer ran out. Nothing tied that loop to whether the roll was actually
+sent: `GameViewModel.roll()` could ignore the tap without saying so (for example when the ViewModel
+was busy with another write, such as an automatic move from the turn timer, or when its "can roll"
+differed from what the screen had shown one frame earlier). The die then tumbled with no roll on its
+way, while the turn timer kept running. A later state update (such as the move after tapping a
+token) snapped the board and stopped it. On the emulators I could not trigger it: about 40 rolls with
+double taps, token taps during the roll, app switches, dropped connections and non-stop die taps,
+with logging on every roll, all handed over correctly. So the exact trigger on your phone is not
+confirmed; the design flaw above is what allowed it, and it is gone.
+
+**Fix.** My die is now a small finite state machine (`ui/game/RollMachine.kt`, 10 tests): a tap is
+accepted only when idle and disables the die at once; the roll is sent and the ViewModel reports
+whether it was written; the dice animation starts only for a confirmed roll, plays once with a fixed
+length (about 900 ms) and lands on the confirmed value; then the die is idle again. A failed send, or
+no confirmation within 5 seconds (also checked when the app comes back to the foreground), returns
+the die to idle with the pill "Couldn't roll — tap again". The optimistic loop no longer exists. The
+turn timer's automatic play lives in the ViewModel and does not depend on the screen.
+
+**Stress test.** At first a debug-only "×200" button in the top bar (it passed on two emulators).
+Later removed from the app at your request; it is now the automated test `RollStressTest` (see
+"Tap and timer fixes" at the end).
+
+### 4. Real 3D dice
+
+`ui/game/DieCube.kt` (pure math, 5 tests) and `ui/game/Die.kt`: a cube with 8 corners, rotation
+matrices about X, Y and Z, a fixed viewing tilt, perspective projection, only the faces facing the
+viewer drawn back to front, each shaded by its angle to a light from the top left. Ivory faces with
+rounded corners, black pips, the 1-pip in the player's color, opposite faces adding up to 7, and a
+soft shadow on the table that shrinks while the die is up. The roll (about 900 ms): the die jumps up
+(24 dp, 1.3x) while tumbling on a random mix of axes, fast then slower (ease-out), and lands with the
+confirmed number facing the viewer, a small bounce and a wobble; rattle during the tumble, "clack" on
+landing (`sfx_clack.wav`, generated like the other sounds). Whole extra turns are added to the resting
+angles, so it always lands exactly on the value (tested for every value). The six glow, "+1 turn",
+three-sixes red shake and idle wiggle stay. `@Preview`s show every face and several angles.
+
+### 5. Classic board look
+
+Flat warm colors (Red `#D9443A`, Green `#3F9B4F`, Yellow `#EDBE2E`, Blue `#2F7FCF`, also used for
+panels and tokens), cream squares (`#FBF6EA`), a 1 dp dark line (`#3B2F2A` at 55%) around every
+square including colored ones (so the yellow home column's squares are visible), yards with a thick
+colored border around a cream inner square and four colored slots with thin dark rings, colored home
+columns joined to colored start squares with an arrow, outlined dark-grey stars, flat center
+triangles with thin dark lines, and a 4% paper grain generated once and cached with the board.
+Tokens are classic pins: a pearl-white pin holding a glossy ball in the player's color with a white
+highlight, on a matching base disc with a thin dark ring. Style only was taken from the reference
+board you sent; the layout and all drawing are our own.
+
+### 6. Stacking
+
+- The translucent box is gone. It was drawn around "blocks" using the displayed game state, which
+  still counted a token that had started to leave as part of the stack until the whole move finished,
+  and token positions that were mid-animation; so it stretched and kept the tokens at stack size.
+- Stacks are now laid out only from tokens at rest (`BoardGeometry.layout(positions, viewer)`); the
+  animation queue leaves out any token that is moving, and re-lays out the moment a token leaves a
+  square, lands, is knocked out, or lands back in its yard. 2 tokens: side by side at 60%; 3-4: 2x2 at
+  50%; 5-8 (only possible on a safe square holding both colors): 3x3 at 33%. No counts or badges.
+  `StackLayoutTest` covers a stack forming, a token leaving, a capture landing on the square, and a
+  safe square with both colors.
+
+### 7. Lucky Boost
+
+- Rules engine: `Dice.roll(streak, boost)` / `Dice.rollFor(state, color, boost)` using `SecureRandom`
+  (`engine/Dice.kt`). Chance of a 6 by the number of rolls in a row without a 6: 0-2 → 1 in 6,
+  3 → 1 in 3, 4 → 1 in 2, 5+ → certain; when it is not a 6 the other five numbers stay equally likely.
+- The count (`noSixRed` / `noSixYellow` in `GameState`, `noSixStreak` per uid in Firebase) grows on
+  each roll without a 6 while the player has **no token on the board**; tokens in the home column
+  count as on the board (your instruction), finished tokens do not. A 6, or any token on the board,
+  resets it; a timeout (no roll) leaves it unchanged. With a token on the board every roll is normal.
+- Room setting `luckyBoost` (default on), chosen with a switch above "Create Room" on the home
+  screen; it cannot be changed after the room is created.
+- Openness: explained in How to Play; a 6 rolled while the boost was raising the odds shows the pill
+  "Lucky Boost! 🍀" (a 6 that would also have come naturally shows it too; the app cannot tell).
+- Data model: room `schemaVersion` is now **2**. Rooms made by the previous version (1) show "Please
+  update the app", and the previous version refuses version-2 rooms the same way, so the two versions
+  never play against each other with different rules.
+- Security rules: creating a room needs `schemaVersion` 2 and a boolean `luckyBoost`; games need
+  `noSixStreak` with a whole number of 0 or more for each of the two players. The rules must be
+  deployed to Firebase for this version to work (see README).
+- Tests (`LuckyBoostTest`): 100,000 rolls are about 1/6 each (seeded and real `SecureRandom`); the
+  boosted chances match the table with the other five numbers even; the boost never applies with a
+  token on the track or in the home column; over 1,000 random games with the boost on, nobody went
+  more than 5 turns in the yard without a 6 (so the 6th turn at the latest brings one).
+
+## Rule change: safe pairs replace blocks (branch `safe-pairs`)
+
+Your instruction, after the fix-up round. It replaces the spec's block rule (section 4 "Blocks",
+edge cases 31 and 32).
+
+- **Safe pair:** two or more tokens of one color on one square. They cannot be captured, on any
+  square. They are not walls: any token may pass over them or land on their square, which is then
+  shared.
+- **Capture, only on landing:** the landing square must hold exactly one opponent token and must not
+  be a safe square (star or start). Two or more opponent tokens there: the square is shared, no
+  capture. If a pair later splits and leaves one opponent token sharing a normal square, nothing
+  happens until a token lands there again.
+- **Engine** (`LudoEngine.kt`): the block check is gone from `targetOf` (it now only needs the token's
+  progress and the roll), and `isOpponentBlock` is deleted. The capture code was already "exactly one
+  opponent token on a non-safe square" and did not change.
+- **Side effect:** a token on the shared track (progress 0..50) can now always move. "No moves" is
+  only possible for yard tokens without a 6 and for home-column tokens whose roll would overshoot.
+  This also removes the case where a blocked token made the app auto-move the only other token.
+- **"No moves" pill** now says why: "No moves — need a 6 to come out" (every token left is in the
+  yard), "No moves — need exact number to reach home" (every token left is in the home column), or
+  "No moves — need a 6 or exact number" (some of each; my wording, not given in the instruction).
+  Worked out in `GameAnimator.playRoll` from the roller's tokens before the roll.
+- **How to Play** explains safe pairs, and now says start squares are safe too (they always were).
+- **Both phones must play the same rules:** room `schemaVersion` is now **3**. Older versions show
+  "Please update the app" for version-3 rooms, and this version does the same for older rooms.
+  Security rules: room creation and `schemaVersion` need 3. **The rules must be deployed again.**
+- **Tests:** the block tests are deleted. New tests: passing over a pair (also coming out of the yard
+  onto a start square held by a pair), landing on an opponent pair on a normal square (shared), a
+  pair splitting and then a token landing on the single token left (captured), my pair being landed
+  on (shared), and "the player chooses when one token is behind an opponent pair". Landing on a
+  single opponent token is covered by the existing test 30. The 1,000-game random test passes with
+  the new rules. Rules tests: schema 3 accepted, 2 and 4 refused.
+
+## Tap and timer fixes (branch `safe-pairs`)
+
+- **A tap directly on my own token means that token.** If it can move, it moves. If it cannot, no
+  other token moves: it shakes a little and the pill "Can't move" shows (not repeated while it is
+  up). Only a tap that is not on one of my tokens uses the nearest-movable-token helper (1.5 squares,
+  "too close" second tap). "Directly on" = inside the area the pawn draws at its current size
+  (`PawnShape.envelope`, the same one the bounds test uses), so a stacked token counts at its smaller
+  size and a "too close" token at its enlarged size. This only applies while I am choosing a move.
+  Code: `tokenUnderTap` and the tap handler in `LudoBoard.kt`, `GameAnimator.cantMove`; tests in
+  `PickTokenTest`.
+- **My die tap wins over the timer's automatic roll.** A tap that registers before the deadline
+  already won (it starts my write at once, and the timer then finds a write running and stops). The
+  gap was a tap that registers (finger lifted) while the timer's automatic roll is being written:
+  the tap was refused ("Couldn't roll") and the app then moved the first legal token by itself 0.5 s
+  after that roll. Now `GameViewModel.roll` remembers the tap for that turn; the die waits for the
+  roll being written instead of failing; and `playTimers` skips the automatic move after an
+  automatic roll that I tapped for. I choose my move within the fresh move time that every roll
+  sets (30 s, the normal move timer; nothing new was added). The automatic roll still counts as a
+  missed turn in the data, and my manual move resets that count to 0 as usual. The opponent's
+  Timeout rule (5 s after the deadline) is unchanged. Not covered by a unit test (the ViewModel needs
+  Firebase); it needs checking on a phone.
+- **×200 button removed.** The stress test is now `RollStressTest`: 200 taps on my die through
+  `RollMachine` while the engine plays the game, with a refused write, a 5 s timeout, a repeated
+  update or a board jump now and then. The die must be ready again after every roll.
+- **Found by that test:** after a board jump (for example on reconnecting) while my die was waiting
+  for its roll, the die stayed disabled for up to 5 s and then showed a false "Couldn't roll".
+  `RollMachine.snapped` now also clears the waiting state; a roll of mine arriving later is still
+  shown. New test in `RollMachineTest`.
+
+## Final review and stress test before release (branch `safe-pairs`)
+
+- **Fixes from a code review of the whole branch:**
+  - The automatic single move now fires only while a move can be sent (online, no write running).
+    Before, a move dropped by a short disconnect was never retried and board taps stayed off until
+    the 30-second timer moved the token.
+  - A refused die tap no longer counts as "tapped for this roll" (only a tap that races the timer's
+    automatic roll does), so it cannot delay the automatic move of a player who is away.
+  - `LudoEngine.isValid` rejects a MOVE state with no legal move. Only a modified app could write
+    one; it crashed the other phone before, and now shows "Something went wrong with this game".
+- **End-to-end on two emulators (local Firebase emulators):** a full game played by tapping through
+  both apps (370 updates: 193 rolls, 176 moves, 6 captures, won by bringing all four home); rematch
+  (loser first); all three "No moves" pills; "Can't move" on a token that cannot move (nothing
+  moves); landing on an opponent pair (shared, no capture, turn passes); disconnect and reconnect
+  ("Opponent reconnecting…", "Reconnecting…", then the board catches up); 3 missed turns forfeit;
+  kill and rejoin; wrong code; code input clean-up; room full; room closed; leave (both sides);
+  3,000 random taps on each phone (no crash, no "not responding").
+- **Seen only under very heavy load (load average above 30):** the host's first turn can run out
+  while its screen is still loading, because the turn clock starts when the guest joins. Not changed.

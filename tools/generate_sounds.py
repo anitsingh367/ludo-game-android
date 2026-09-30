@@ -101,6 +101,12 @@ def dice_roll():
     return out
 
 
+def clack():
+    # The die landing on the table: a short hard knock with a woody ring.
+    out = noise_burst(0.05, 0.9, decay=90, lowpass=0.55)
+    return mix(out, tone(740, 0.09, 0.35, decay=45, harmonics=((1, 1.0), (2.4, 0.4))))
+
+
 def hop():
     # A soft wooden tick.
     return mix(tone(1100, 0.07, 0.6, decay=70, harmonics=((1, 1.0), (2.7, 0.3))), noise_burst(0.02, 0.2, decay=150, lowpass=0.6))
@@ -171,6 +177,7 @@ def your_turn():
 if __name__ == "__main__":
     os.makedirs(OUT, exist_ok=True)
     write("sfx_roll", dice_roll(), peak=0.55)
+    write("sfx_clack", clack(), peak=0.5)
     write("sfx_hop", hop(), peak=0.35)
     write("sfx_capture", capture(), peak=0.6)
     write("sfx_home", home(), peak=0.5)

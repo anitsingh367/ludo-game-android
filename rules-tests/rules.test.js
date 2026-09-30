@@ -40,11 +40,12 @@ const room = (uid, sub = '') => db(uid).ref(`rooms/${CODE}${sub}`);
 
 function newRoom(now = Date.now(), host = HOST) {
   return {
-    schemaVersion: 1,
+    schemaVersion: 3,
     createdAt: now,
     expiresAt: now + DAY,
     hostUid: host,
     status: 'waiting',
+    luckyBoost: true,
     players: { [host]: { color: 'red', name: 'Ann', connected: true, lastSeen: now } },
   };
 }
@@ -58,6 +59,7 @@ function initialGame(now = Date.now()) {
     sixesInRow: 0,
     tokens: { red: [-1, -1, -1, -1], yellow: [-1, -1, -1, -1] },
     missedTurns: { [HOST]: 0, [GUEST]: 0 },
+    noSixStreak: { [HOST]: 0, [GUEST]: 0 },
     turnDeadline: now + 30000,
   };
 }
@@ -112,7 +114,13 @@ test('room creation checks every field', async () => {
   await assertFails(room(HOST).set(newRoom(now, STRANGER))); // host must be the creator
   await assertFails(room(HOST).set({ ...newRoom(now), guestUid: GUEST }));
   await assertFails(room(HOST).set({ ...newRoom(now), status: 'playing' }));
-  await assertFails(room(HOST).set({ ...newRoom(now), schemaVersion: 2 }));
+  await assertFails(room(HOST).set({ ...newRoom(now), schemaVersion: 2 })); // older app
+  await assertFails(room(HOST).set({ ...newRoom(now), schemaVersion: 4 }));
+  const noBoost = newRoom(now);
+  delete noBoost.luckyBoost;
+  await assertFails(room(HOST).set(noBoost)); // the Lucky Boost setting must be chosen
+  await assertFails(room(HOST).set({ ...newRoom(now), luckyBoost: 'yes' }));
+  await assertSucceeds(room(HOST).set({ ...newRoom(now), luckyBoost: false }));
   await assertFails(room(HOST).set({ ...newRoom(now), expiresAt: now + 10 * DAY }));
   await assertFails(room(HOST).set({ ...newRoom(now), createdAt: now - DAY, expiresAt: now }));
   await assertFails(room(HOST).set({ ...newRoom(now), game: initialGame(now) }));
@@ -385,4 +393,23 @@ test('status changes follow the allowed transitions', async () => {
   await assertSucceeds(room(GUEST, '/status').set('abandoned'));
   await assertSucceeds(room(HOST, '/status').set('abandoned'));
   await assertFails(room(HOST, '/status').set('playing'));
+});
+
+// ---------- Lucky Boost ----------
+
+test('the Lucky Boost setting cannot be changed after the room is created', async () => {
+  await seedPlaying();
+  await assertFails(room(HOST, '/luckyBoost').set(false));
+  await assertFails(room(GUEST, '/luckyBoost').set(false));
+});
+
+test('noSixStreak is required and must be a whole number, 0 or more', async () => {
+  await seedPlaying();
+  const withoutStreak = afterRoll(6);
+  delete withoutStreak.noSixStreak;
+  await assertFails(room(HOST, '/game').set(withoutStreak));
+  await assertFails(room(HOST, '/game').set(afterRoll(6, { noSixStreak: { [HOST]: -1, [GUEST]: 0 } })));
+  await assertFails(room(HOST, '/game').set(afterRoll(6, { noSixStreak: { [HOST]: 1.5, [GUEST]: 0 } })));
+  await assertFails(room(HOST, '/game').set(afterRoll(6, { noSixStreak: { [HOST]: 0, [GUEST]: 0, [STRANGER]: 2 } })));
+  await assertSucceeds(room(HOST, '/game').set(afterRoll(6, { noSixStreak: { [HOST]: 4, [GUEST]: 0 } })));
 });

@@ -2,41 +2,74 @@ package com.example.ludoduel.ui.game
 
 import androidx.compose.ui.geometry.Offset
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNull
 import org.junit.Test
 
+/** Smart tap, in board squares. */
 class PickTokenTest {
-    private val unit = 60f          // pixels per board square
-    private val minRadius = 72f     // 24 dp at density 3
-
-    // Tokens 0 and 1 stacked on progress 5 (fanned slightly), token 2 elsewhere, token 3 in the yard.
+    // Token 0 and 1 share a square (progress 5, fanned side by side), token 2 is on another square,
+    // token 3 is in the yard.
     private val tokens = listOf(5, 5, 9, -1)
-    private val positions = mapOf(0 to Offset(6.35f, 8.5f), 1 to Offset(6.65f, 8.6f), 2 to Offset(3.5f, 8.5f), 3 to Offset(2f, 11f))
+    private val positions = mapOf(0 to Offset(5.28f, 8.5f), 1 to Offset(5.72f, 8.5f), 2 to Offset(1.5f, 8.5f), 3 to Offset(2f, 11f))
 
-    private fun pick(tap: Offset, movable: List<Int>) =
-        pickToken(tap, unit, minRadius, movable, tokens) { positions.getValue(it) }
+    private fun pick(tap: Offset, movable: List<Int>) = pickToken(tap, movable, tokens) { positions.getValue(it) }
 
-    @Test fun `tap near a movable token picks it`() {
-        assertEquals(2, pick(Offset(3.5f * unit, 8.5f * unit), listOf(0, 2)))
+    @Test fun `a tap picks the nearest movable token`() {
+        assertEquals(TapResult.Pick(2), pick(Offset(1.5f, 8.5f), listOf(0, 2)))
     }
 
-    @Test fun `touch area is at least 48 dp even for small tokens`() {
-        // 70 px away: outside 0.6 of a square (36 px) but inside the 24 dp minimum radius.
-        assertEquals(2, pick(Offset(3.5f * unit + 70f, 8.5f * unit), listOf(2)))
-        assertNull(pick(Offset(3.5f * unit + 80f, 8.5f * unit), listOf(2)))
+    @Test fun `a tap up to one and a half squares away still picks it`() {
+        assertEquals(TapResult.Pick(2), pick(Offset(1.5f + 1.45f, 8.5f), listOf(2)))
+        assertEquals(TapResult.Miss, pick(Offset(1.5f + 1.6f, 8.5f), listOf(2)))
     }
 
-    @Test fun `tap on a stack picks the token that can move`() {
-        // Tap right on token 0 but only token 1 (same square) can move.
-        assertEquals(1, pick(Offset(6.35f * unit, 8.5f * unit), listOf(1)))
+    @Test fun `tokens that cannot move never steal a tap`() {
+        // The tap is nearer the yard token (3), which cannot move, than token 2: token 2 is picked.
+        assertEquals(TapResult.Pick(2), pick(Offset(1.9f, 9.8f), listOf(2)))
+        assertEquals(TapResult.Miss, pick(Offset(2f, 11f), emptyList()))
     }
 
-    @Test fun `when several tokens in a stack can move the first one is picked`() {
-        assertEquals(0, pick(Offset(6.65f * unit, 8.6f * unit), listOf(0, 1)))
+    @Test fun `two movable tokens on one square make the same move`() {
+        val result = pick(Offset(5.5f, 8.5f), listOf(0, 1))
+        assertEquals(true, result == TapResult.Pick(0) || result == TapResult.Pick(1))
     }
 
-    @Test fun `taps on tokens that cannot move do nothing`() {
-        assertNull(pick(Offset(2f * unit, 11f * unit), listOf(2)))
-        assertNull(pick(Offset(2f * unit, 11f * unit), emptyList()))
+    @Test fun `about equally close tokens on different squares ask for a second tap`() {
+        // Halfway between token 2 (x 1.5) and token 0 (x 5.28) is too far for both; use closer tokens.
+        val near = mapOf(0 to Offset(4.5f, 8.5f), 2 to Offset(5.5f, 8.5f))
+        val result = pickToken(Offset(5.05f, 8.5f), listOf(0, 2), listOf(5, -1, 6, -1)) { near.getValue(it) }
+        assertEquals(TapResult.TooClose(listOf(2, 0)), result)
+        // A clearer tap picks one.
+        assertEquals(TapResult.Pick(2), pickToken(Offset(5.4f, 8.5f), listOf(0, 2), listOf(5, -1, 6, -1)) { near.getValue(it) })
+    }
+
+    // A tap directly on one of my tokens: that token, never a neighbor.
+    private val scales = mapOf(0 to 0.6f, 1 to 0.6f, 2 to 1f, 3 to 1f)
+    private fun under(tap: Offset, tokens: List<Int> = this.tokens) =
+        tokenUnderTap(tap, tokens, { positions.getValue(it) }) { scales.getValue(it) }
+
+    @Test fun `a tap on my token that cannot move finds that token, not a movable neighbor`() {
+        // Token 2 cannot move; token 0 can, on the next square. The nearest-token helper alone would
+        // pick token 0, but the tap is on token 2, so the board shakes token 2 and moves nothing.
+        val side = mapOf(0 to Offset(2.5f, 8.5f), 2 to Offset(1.5f, 8.5f))
+        val tap = Offset(1.85f, 8.4f)
+        assertEquals(TapResult.Pick(0), pickToken(tap, listOf(0), listOf(6, -1, 9, -1)) { side.getValue(it) })
+        assertEquals(2, tokenUnderTap(tap, listOf(6, 56, 9, 56), { side.getValue(it) }) { 1f })
+        // On the head and on the base of the pawn.
+        assertEquals(2, under(Offset(1.5f, 8.5f - 0.35f)))
+        assertEquals(2, under(Offset(1.5f, 8.5f + 0.4f)))
+    }
+
+    @Test fun `a tap on either token of a stack finds that stack`() {
+        assertEquals(0, under(Offset(5.2f, 8.5f)))
+        assertEquals(1, under(Offset(5.8f, 8.5f)))
+    }
+
+    @Test fun `a tap on no token of mine finds nothing, so the nearest movable token is used`() {
+        assertEquals(null, under(Offset(3.5f, 8.5f))) // between token 2 and the stack
+        assertEquals(null, under(Offset(1.5f, 7.9f))) // the square above token 2
+    }
+
+    @Test fun `finished tokens are not tapped`() {
+        assertEquals(null, under(Offset(1.5f, 8.5f), listOf(5, 5, 56, -1)))
     }
 }

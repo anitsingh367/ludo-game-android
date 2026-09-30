@@ -43,6 +43,7 @@ data class GameUi(
     val opponentLeft: Boolean = false,
     val iWantRematch: Boolean = false,
     val opponentWantsRematch: Boolean = false,
+    val luckyBoost: Boolean = false,
 )
 
 /**
@@ -56,6 +57,8 @@ class GameViewModel(private val c: AppContainer, saved: SavedStateHandle) : View
     private val uid = MutableStateFlow<String?>(null)
     /** True while one of my transactions is running. Blocks further input (double taps). */
     private val busy = MutableStateFlow(false)
+    /** The game version I last tapped the die at (see [roll]). */
+    private var rollTappedAt: Long? = null
     private var presenceAcquired = false
 
     private val room: StateFlow<RoomEvent?> =
@@ -84,11 +87,24 @@ class GameViewModel(private val c: AppContainer, saved: SavedStateHandle) : View
 
     fun serverNow(): Long = c.clock.now()
 
-    fun roll() {
+    /**
+     * Sends my roll. [onResult] is told whether a roll is on its way (false: ignored or refused).
+     * If the timer's automatic roll is being written at the same moment, my tap still wins: it is
+     * remembered for this turn (that roll counts as mine and no automatic move follows it, see
+     * [playTimers]), and the die waits for that roll.
+     */
+    fun roll(onResult: (Boolean) -> Unit) {
         val ui = ui.value
-        val game = ui.game ?: return
-        if (!ui.canRoll) return
-        viewModelScope.launch { act(game, Action.Roll(Dice.roll())) }
+        val game = ui.game
+        val myRoll = game != null && game.state.turn == ui.me && game.state.phase == Phase.ROLL
+        when {
+            myRoll && busy.value -> {
+                rollTappedAt = game.version
+                onResult(true)
+            }
+            game == null || !ui.canRoll -> onResult(false)
+            else -> viewModelScope.launch { onResult(act(game, Action.Roll(rollValue(game)))) }
+        }
     }
 
     fun move(token: Int) {
@@ -125,6 +141,13 @@ class GameViewModel(private val c: AppContainer, saved: SavedStateHandle) : View
     }
 
     private fun seats(): Seats? = (room.value as? RoomEvent.Loaded)?.room?.seats
+
+    /** My roll for [game], with the room's Lucky Boost setting (see [Dice.rollFor]). */
+    private fun rollValue(game: RoomGame): Int {
+        val loaded = checkNotNull((room.value as? RoomEvent.Loaded)?.room)
+        val me = checkNotNull(loaded.seats?.colorOf(checkNotNull(uid.value)))
+        return Dice.rollFor(game.state, me, loaded.luckyBoost)
+    }
 
     private suspend fun act(game: RoomGame, action: Action): Boolean {
         val seats = seats() ?: return false
@@ -174,6 +197,7 @@ class GameViewModel(private val c: AppContainer, saved: SavedStateHandle) : View
             opponentLeft = r.status == RoomStatus.ABANDONED,
             iWantRematch = r.rematch[id] == game.gameNumber,
             opponentWantsRematch = r.rematch[opponentUid] == game.gameNumber,
+            luckyBoost = r.luckyBoost,
         )
     }
 
@@ -199,21 +223,18 @@ class GameViewModel(private val c: AppContainer, saved: SavedStateHandle) : View
                 Phase.ROLL -> {
                     // My time ran out with the app open: roll for me.
                     waitUntil(game.turnDeadline)
-                    act(game, Action.Roll(Dice.roll(), auto = true))
+                    act(game, Action.Roll(rollValue(game), auto = true))
                 }
                 Phase.MOVE -> {
                     val legal = LudoEngine.legalMoves(s, input.me, checkNotNull(s.dice))
                     val last = s.lastAction
                     when {
-                        // The roll was automatic: finish the turn right away with the first legal move.
-                        last?.type == ActionType.ROLL && last.by == input.me && last.auto -> {
+                        // The roll was automatic and I did not tap the die for it: finish the turn
+                        // right away with the first legal move. If I did tap, I choose my move within
+                        // the fresh move time, like after any roll.
+                        last?.type == ActionType.ROLL && last.by == input.me && last.auto && rollTappedAt != game.version - 1 -> {
                             delay(AUTO_MOVE_DELAY_MILLIS)
                             act(game, Action.Move(legal.first(), auto = true))
-                        }
-                        // Only one choice: play it if the player doesn't tap it first.
-                        legal.size == 1 -> {
-                            delay(SINGLE_MOVE_DELAY_MILLIS)
-                            act(game, Action.Move(legal.single()))
                         }
                         else -> {
                             waitUntil(game.turnDeadline)
@@ -250,7 +271,6 @@ class GameViewModel(private val c: AppContainer, saved: SavedStateHandle) : View
     }
 
     private companion object {
-        const val SINGLE_MOVE_DELAY_MILLIS = 1_500L
         const val AUTO_MOVE_DELAY_MILLIS = 800L
         const val TIMEOUT_MARGIN_MILLIS = 1_000L
         const val TIMEOUT_RETRY_MILLIS = 2_000L

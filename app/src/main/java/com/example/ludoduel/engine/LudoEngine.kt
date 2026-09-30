@@ -14,7 +14,18 @@ object LudoEngine {
     fun legalMoves(state: GameState, color: PlayerColor, dice: Int): List<Int> {
         if (dice !in 1..6) return emptyList()
         val tokens = state.tokensOf(color)
-        return tokens.indices.filter { targetOf(state, color, tokens[it], dice) != null }
+        return tokens.indices.filter { targetOf(tokens[it], dice) != null }
+    }
+
+    /**
+     * When it is [color]'s turn to move and exactly one token has a legal move, that token (the app
+     * moves it by itself). Null when there is nothing to move or the player has a choice (two or more
+     * tokens can move, including two tokens on the same square or bringing out one of several yard
+     * tokens with a 6).
+     */
+    fun onlyMovableToken(state: GameState, color: PlayerColor): Int? {
+        if (state.phase != Phase.MOVE || state.turn != color) return null
+        return legalMoves(state, color, checkNotNull(state.dice)).singleOrNull()
     }
 
     fun apply(state: GameState, action: Action, actor: PlayerColor): Result<GameState> {
@@ -41,13 +52,15 @@ object LudoEngine {
             list.size == TOKENS_PER_PLAYER && list.all { it in YARD..HOME }
         }
         val diceOk = when (state.phase) {
-            Phase.MOVE -> state.dice in 1..6
+            // A MOVE state always has a legal move: with none, the engine passes the turn.
+            Phase.MOVE -> state.dice?.let { it in 1..6 && legalMoves(state, state.turn, it).isNotEmpty() } == true
             else -> state.dice == null
         }
         val winnerOk = (state.phase == Phase.OVER) == (state.winner != null && state.winReason != null)
         return tokensOk && diceOk && winnerOk &&
             state.sixesInRow in 0..2 &&
-            state.missedRed in 0..MAX_MISSED_TURNS && state.missedYellow in 0..MAX_MISSED_TURNS
+            state.missedRed in 0..MAX_MISSED_TURNS && state.missedYellow in 0..MAX_MISSED_TURNS &&
+            state.noSixRed >= 0 && state.noSixYellow >= 0
     }
 
     private fun roll(state: GameState, action: Action.Roll, actor: PlayerColor): Result<GameState> {
@@ -57,7 +70,9 @@ object LudoEngine {
 
         val missed = if (action.auto) state.missedOf(actor) + 1 else 0
         val record = LastAction(ActionType.ROLL, actor, dice = action.value, auto = action.auto)
-        val counted = state.withMissed(actor, missed).copy(lastAction = record)
+        // Lucky Boost count: grows while the player has no token on the board and rolls no 6.
+        val noSix = if (state.hasTokenOnBoard(actor) || action.value == 6) 0 else state.noSixOf(actor) + 1
+        val counted = state.withMissed(actor, missed).withNoSix(actor, noSix).copy(lastAction = record)
         if (missed >= MAX_MISSED_TURNS) return Result.success(forfeitByTimeouts(counted, actor))
 
         val sixes = if (action.value == 6) state.sixesInRow + 1 else 0
@@ -76,11 +91,12 @@ object LudoEngine {
         val tokens = state.tokensOf(actor)
         if (action.token !in tokens.indices) return fail("No such token")
         val from = tokens[action.token]
-        val to = targetOf(state, actor, from, dice) ?: return fail("That token cannot move")
+        val to = targetOf(from, dice) ?: return fail("That token cannot move")
 
         var next = state.withTokens(actor, tokens.toMutableList().also { it[action.token] = to })
 
-        // Capture: a single opponent token on a normal (not safe) square goes back to the yard.
+        // Capture, only when landing: a single opponent token on a normal (not safe) square goes back
+        // to the yard. Two or more opponent tokens are a safe pair: the square is shared.
         var captured: Int? = null
         if (to <= LAST_TRACK) {
             val square = absoluteSquare(actor, to)
@@ -88,7 +104,6 @@ object LudoEngine {
                 val opp = actor.opponent
                 val oppTokens = next.tokensOf(opp)
                 val hits = oppTokens.indices.filter { isOnSquare(opp, oppTokens[it], square) }
-                // Two or more opponent tokens would be a block, and targetOf already forbids that.
                 if (hits.size == 1) {
                     captured = hits[0]
                     next = next.withTokens(opp, oppTokens.toMutableList().also { it[hits[0]] = YARD })
@@ -132,26 +147,14 @@ object LudoEngine {
 
     /**
      * Where a token at [from] ends up after moving [dice] squares, or null if that move is illegal:
-     * leaving the yard needs a 6, finishing needs the exact number, and the token may not land on
-     * or pass an opponent block on the shared track.
+     * leaving the yard needs a 6 and finishing needs the exact number. Nothing on the track stops a
+     * token (safe pairs can be passed and shared).
      */
-    private fun targetOf(state: GameState, color: PlayerColor, from: Int, dice: Int): Int? {
+    private fun targetOf(from: Int, dice: Int): Int? {
         if (from == HOME) return null
-        if (from == YARD) {
-            if (dice != 6) return null
-            return if (isOpponentBlock(state, color, absoluteSquare(color, 0))) null else 0
-        }
+        if (from == YARD) return if (dice == 6) 0 else null
         val to = from + dice
-        if (to > HOME) return null
-        for (step in from + 1..minOf(to, LAST_TRACK)) {
-            if (isOpponentBlock(state, color, absoluteSquare(color, step))) return null
-        }
-        return to
-    }
-
-    private fun isOpponentBlock(state: GameState, color: PlayerColor, square: Int): Boolean {
-        val opp = color.opponent
-        return state.tokensOf(opp).count { isOnSquare(opp, it, square) } >= 2
+        return if (to > HOME) null else to
     }
 
     private fun isOnSquare(color: PlayerColor, progress: Int, square: Int): Boolean =

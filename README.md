@@ -16,7 +16,12 @@ Firebase Realtime Database. No Cloud Functions, so it runs on the free Spark pla
 - `ASSETS.md` – where the font and sounds come from and their licenses (`tools/generate_sounds.py` makes the sounds).
 
 The gear button (on Home and in the game) opens the settings: sound, vibration and colorblind mode
-(a letter on every token).
+(a letter on every token). The "Lucky Boost 🍀" switch above "Create Room" is a room setting (see
+How to Play in the game).
+
+**After updating the app, deploy the security rules again** (`firebase deploy --only database`, or
+paste `database.rules.json` into the console). This version stores new fields (Lucky Boost) and
+rooms of schema version 3, which the old rules do not allow.
 
 ## Important: the build and `google-services.json`
 

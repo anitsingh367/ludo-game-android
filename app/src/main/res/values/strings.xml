@@ -18,6 +18,8 @@
     <string name="home_rejoin_title">Game in progress</string>
     <string name="home_rejoin_body">You were playing in room %1$s. Rejoin game?</string>
     <string name="home_rejoin">Rejoin game</string>
+    <string name="home_lucky_boost">Lucky Boost 🍀</string>
+    <string name="home_lucky_boost_hint">Helps a player stuck in the yard roll a 6 sooner</string>
     <string name="home_create_failed">Could not create a room. Check your connection and try again.</string>
 
     <!-- Waiting room -->
@@ -57,9 +59,14 @@
     <string name="game_yellow">Yellow</string>
     <string name="game_timeout">%1$s ran out of time</string>
     <string name="fx_plus_one_turn">+1 turn!</string>
-    <string name="fx_no_moves">No moves</string>
+    <string name="fx_cant_move">Can\'t move</string>
+    <string name="fx_no_moves_six">No moves — need a 6 to come out</string>
+    <string name="fx_no_moves_exact">No moves — need exact number to reach home</string>
+    <string name="fx_no_moves_both">No moves — need a 6 or exact number</string>
     <string name="fx_three_sixes">3 sixes — turn lost</string>
     <string name="fx_captured">Captured! +1 turn</string>
+    <string name="fx_lucky_boost">Lucky Boost! 🍀</string>
+    <string name="fx_could_not_roll">Couldn\'t roll — tap again</string>
     <string name="fx_your_turn">Your turn!</string>
     <string name="fx_players_turn">%1$s\'s turn</string>
     <string name="game_roll">Roll</string>
@@ -97,6 +104,6 @@
 
     <!-- How to play -->
     <string name="rules_title">How to play</string>
-    <string name="rules_body">• Roll the dice on your turn, then tap a glowing token to move it.\n• A token leaves the yard only on a 6.\n• A 6 gives you another roll. Three 6s in a row lose the turn.\n• Land on a single opponent token to send it back to its yard and roll again. Star squares are safe.\n• Two of your tokens on one square make a block. Your opponent cannot land on it or pass it.\n• You need the exact number to reach home. A token reaching home gives another roll.\n• You have 30 seconds per turn. Miss 3 turns in a row and you lose.\n• First to bring all four tokens home wins.</string>
+    <string name="rules_body">• Roll the dice on your turn, then tap a glowing token to move it.\n• A token leaves the yard only on a 6.\n• A 6 gives you another roll. Three 6s in a row lose the turn.\n• Land on a single opponent token to send it back to its yard and roll again. Star squares and start squares are safe.\n• Two or more tokens of one color on one square are a safe pair. A safe pair cannot be captured. Any token can pass it or land on its square to share it.\n• You need the exact number to reach home. A token reaching home gives another roll.\n• You have 30 seconds per turn. Miss 3 turns in a row and you lose.\n• First to bring all four tokens home wins.\n• Lucky Boost 🍀 (a room setting, on by default): if none of your tokens is on the board and you have rolled no 6 for 3 turns in a row, your chance of a 6 goes up: 1 in 3 on the next turn, then 1 in 2, and the turn after that is always a 6. It never applies while you have a token on the board (the home column counts).</string>
     <string name="close">Close</string>
 </resources>

@@ -30,15 +30,22 @@
         ".read": "auth != null && (!data.exists() || data.child('hostUid').val() === auth.uid || data.child('guestUid').val() === auth.uid)",
 
         // Create a room: only if the code is free, the creator is the host, there is no guest
-        // yet, the status is "waiting", the schema version is 1, there is no game yet, and the
-        // times are sane (created within 5 minutes of server time, expires 24 hours later).
+        // yet, the status is "waiting", the schema version is 3, the Lucky Boost setting is
+        // chosen, there is no game yet, and the times are sane (created within 5 minutes of server
+        // time, expires 24 hours later).
         // Existing rooms can never be replaced or deleted through this rule.
-        ".write": "auth != null && !data.exists() && newData.child('hostUid').val() === auth.uid && !newData.child('guestUid').exists() && newData.child('status').val() === 'waiting' && newData.child('schemaVersion').val() === 1 && !newData.child('game').exists() && !newData.child('rematch').exists() && newData.child('createdAt').isNumber() && newData.child('createdAt').val() > now - 300000 && newData.child('createdAt').val() < now + 300000 && newData.child('expiresAt').val() === newData.child('createdAt').val() + 86400000 && newData.child('players').child(auth.uid).exists()",
+        ".write": "auth != null && !data.exists() && newData.child('hostUid').val() === auth.uid && !newData.child('guestUid').exists() && newData.child('status').val() === 'waiting' && newData.child('schemaVersion').val() === 3 && newData.child('luckyBoost').isBoolean() && !newData.child('game').exists() && !newData.child('rematch').exists() && newData.child('createdAt').isNumber() && newData.child('createdAt').val() > now - 300000 && newData.child('createdAt').val() < now + 300000 && newData.child('expiresAt').val() === newData.child('createdAt').val() + 86400000 && newData.child('players').child(auth.uid).exists()",
 
-        // Public: the app shows "Please update the app" when this is not 1. Never changes.
+        // Public: the app shows "Please update the app" when this is not 3. Never changes.
+        // (2 added Lucky Boost: the room's luckyBoost setting and the game's noSixStreak.
+        // 3 replaced blocks with safe pairs: a rules change, so both phones must match.)
         "schemaVersion": {
           ".read": "auth != null",
-          ".validate": "newData.isNumber() && newData.val() === 1"
+          ".validate": "newData.isNumber() && newData.val() === 3"
+        },
+        // The Lucky Boost room setting. Set once when the room is created (see the room ".write").
+        "luckyBoost": {
+          ".validate": "newData.isBoolean()"
         },
         // Set once at creation (see the room ".write" above). Never changes.
         "createdAt": {
@@ -139,7 +146,7 @@
           // The game can never be deleted.
           ".write": "auth != null && newData.exists() && (auth.uid === root.child('rooms').child($code).child('hostUid').val() || auth.uid === root.child('rooms').child($code).child('guestUid').val()) && ((!data.exists() && auth.uid === root.child('rooms').child($code).child('guestUid').val() && newData.child('version').val() === 1 && newData.child('gameNumber').val() === 1 && newData.child('turnUid').val() === root.child('rooms').child($code).child('hostUid').val() && newData.child('phase').val() === 'ROLL' && !newData.child('lastAction').exists() && !newData.child('winnerUid').exists()) || (data.exists() && newData.child('version').val() === data.child('version').val() + 1 && ((data.child('phase').val() !== 'OVER' && data.child('turnUid').val() === auth.uid && newData.child('gameNumber').val() === data.child('gameNumber').val() && newData.child('lastAction/byUid').val() === auth.uid && newData.child('lastAction/type').val() !== 'timeout') || (data.child('phase').val() !== 'OVER' && data.child('turnUid').val() !== auth.uid && now > data.child('turnDeadline').val() + 5000 && newData.child('gameNumber').val() === data.child('gameNumber').val() && newData.child('lastAction/type').val() === 'timeout' && newData.child('lastAction/byUid').val() === data.child('turnUid').val() && newData.child('missedTurns').child(data.child('turnUid').val()).val() === data.child('missedTurns').child(data.child('turnUid').val()).val() + 1 && newData.child('tokens/red/0').val() === data.child('tokens/red/0').val() && newData.child('tokens/red/1').val() === data.child('tokens/red/1').val() && newData.child('tokens/red/2').val() === data.child('tokens/red/2').val() && newData.child('tokens/red/3').val() === data.child('tokens/red/3').val() && newData.child('tokens/yellow/0').val() === data.child('tokens/yellow/0').val() && newData.child('tokens/yellow/1').val() === data.child('tokens/yellow/1').val() && newData.child('tokens/yellow/2').val() === data.child('tokens/yellow/2').val() && newData.child('tokens/yellow/3').val() === data.child('tokens/yellow/3').val()) || (data.child('phase').val() !== 'OVER' && newData.child('gameNumber').val() === data.child('gameNumber').val() && newData.child('lastAction/type').val() === 'left' && newData.child('lastAction/byUid').val() === auth.uid && newData.child('phase').val() === 'OVER' && newData.child('winReason').val() === 'left' && newData.child('winnerUid').exists() && newData.child('winnerUid').val() !== auth.uid) || (data.child('phase').val() === 'OVER' && newData.child('gameNumber').val() === data.child('gameNumber').val() + 1 && root.child('rooms').child($code).child('rematch').child(root.child('rooms').child($code).child('hostUid').val()).val() === data.child('gameNumber').val() && root.child('rooms').child($code).child('rematch').child(root.child('rooms').child($code).child('guestUid').val()).val() === data.child('gameNumber').val() && newData.child('phase').val() === 'ROLL' && newData.child('turnUid').val() !== data.child('winnerUid').val() && !newData.child('lastAction').exists() && !newData.child('winnerUid').exists() && newData.child('tokens/red/0').val() === -1 && newData.child('tokens/red/1').val() === -1 && newData.child('tokens/red/2').val() === -1 && newData.child('tokens/red/3').val() === -1 && newData.child('tokens/yellow/0').val() === -1 && newData.child('tokens/yellow/1').val() === -1 && newData.child('tokens/yellow/2').val() === -1 && newData.child('tokens/yellow/3').val() === -1))))",
 
-          ".validate": "newData.hasChildren(['version', 'gameNumber', 'turnUid', 'phase', 'sixesInRow', 'tokens', 'missedTurns', 'turnDeadline'])",
+          ".validate": "newData.hasChildren(['version', 'gameNumber', 'turnUid', 'phase', 'sixesInRow', 'tokens', 'missedTurns', 'noSixStreak', 'turnDeadline'])",
 
           "version": {
             ".validate": "newData.isNumber() && newData.val() >= 1 && newData.val() % 1 === 0"
@@ -184,6 +191,13 @@
           "missedTurns": {
             "$uid": {
               ".validate": "($uid === root.child('rooms').child($code).child('hostUid').val() || $uid === newData.parent().parent().parent().child('guestUid').val()) && newData.isNumber() && newData.val() >= 0 && newData.val() <= 3 && newData.val() % 1 === 0"
+            }
+          },
+          // Lucky Boost counters per player uid: rolls in a row without a 6 while the player had no
+          // token on the board. A whole number, 0 or more.
+          "noSixStreak": {
+            "$uid": {
+              ".validate": "($uid === root.child('rooms').child($code).child('hostUid').val() || $uid === newData.parent().parent().parent().child('guestUid').val()) && newData.isNumber() && newData.val() >= 0 && newData.val() % 1 === 0"
             }
           },
           // Server time when the turn runs out: at most 2 minutes ahead (30 s turn plus clock

@@ -119,40 +119,46 @@ object BoardGeometry {
         if (from == YARD) listOf(point(color, index, to))
         else (from + 1..to).map { point(color, index, it) }
 
-    /** Size of each token when two or more share a square. */
-    const val STACK_SCALE = 0.7f
+    /** Scale of a finished pawn in its color's center triangle. */
+    const val FINISHED_SCALE = 0.8f
+
+    /** Where every token is drawn when the whole [state] is at rest. */
+    fun layout(state: GameState, viewer: PlayerColor): Map<TokenKey, TokenSpot> =
+        layout(
+            PlayerColor.entries.flatMap { c -> (0 until TOKENS_PER_PLAYER).map { i -> TokenKey(c, i) to state.tokensOf(c)[i] } }.toMap(),
+            viewer,
+        )
 
     /**
-     * Final draw position of every token in the viewer's orientation. Tokens sharing a square are
-     * shrunk and fanned out diagonally so each one stays visible. Finished tokens all sit on their
-     * color's finish spot (the board shows one pawn there with a counter).
+     * Where each of the given tokens (key -> progress) is drawn, in the viewer's orientation.
+     * Only tokens at rest should be passed in: a token in the middle of a move is not part of any
+     * stack. Tokens sharing a square are shrunk and arranged so each one is fully visible and stays
+     * inside the square: 2 side by side (60%), 3-4 in a 2x2 (50%), 5-8 in a 3x3 (33%, when both
+     * colors share a square). Finished tokens sit on their color's finish spot.
      */
-    fun layout(state: GameState, viewer: PlayerColor): Map<TokenKey, TokenSpot> {
+    fun layout(positions: Map<TokenKey, Int>, viewer: PlayerColor): Map<TokenKey, TokenSpot> {
         val result = mutableMapOf<TokenKey, TokenSpot>()
         val onBoard = mutableListOf<Pair<TokenKey, GridPoint>>()
-        for (color in PlayerColor.entries) {
-            for (i in 0 until TOKENS_PER_PLAYER) {
-                val progress = state.tokensOf(color)[i]
-                val key = TokenKey(color, i)
-                val p = forViewer(point(color, i, progress), viewer)
-                if (progress == HOME) result[key] = TokenSpot(p, FINISHED_SCALE) else onBoard += key to p
-            }
+        for ((key, progress) in positions) {
+            val p = forViewer(point(key.color, key.index, progress), viewer)
+            if (progress == HOME) result[key] = TokenSpot(p, FINISHED_SCALE) else onBoard += key to p
         }
         onBoard.groupBy({ it.second }, { it.first }).forEach { (point, keys) ->
-            val n = keys.size
-            // Red before Yellow and lower index first, so the fan order never jumps around.
-            keys.sortedWith(compareBy({ it.color }, { it.index })).forEachIndexed { i, key ->
-                if (n == 1) {
-                    result[key] = TokenSpot(point, 1f)
-                } else {
-                    val step = minOf(0.3f, 0.75f / (n - 1))
-                    val t = i - (n - 1) / 2f
-                    result[key] = TokenSpot(GridPoint(point.x + t * step, point.y + t * step * 0.45f), STACK_SCALE)
-                }
+            // Red before Yellow and lower index first, so the arrangement never jumps around.
+            val sorted = keys.sortedWith(compareBy({ it.color }, { it.index }))
+            sorted.forEachIndexed { i, key ->
+                val (dx, dy, scale) = stackSlot(sorted.size, i)
+                result[key] = TokenSpot(GridPoint(point.x + dx, point.y + dy), scale)
             }
         }
         return result
     }
 
-    private const val FINISHED_SCALE = 0.62f
+    /** Offset (in squares) and scale of the [i]-th of [n] tokens on one square. */
+    internal fun stackSlot(n: Int, i: Int): Triple<Float, Float, Float> = when {
+        n == 1 -> Triple(0f, 0f, 1f)
+        n == 2 -> Triple(if (i == 0) -0.22f else 0.22f, 0f, 0.6f)
+        n <= 4 -> Triple(if (i % 2 == 0) -0.25f else 0.25f, if (i < 2) -0.25f else 0.25f, 0.5f)
+        else -> Triple(((i % 3) - 1) * 0.33f, ((i / 3) - 1) * 0.33f, 0.33f)
+    }
 }

@@ -75,12 +75,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.ludoduel.R
 import com.example.ludoduel.data.GameReducer
 import com.example.ludoduel.data.RoomGame
 import com.example.ludoduel.engine.ActionType
 import com.example.ludoduel.engine.HOME
+import com.example.ludoduel.engine.LudoEngine
 import com.example.ludoduel.engine.Phase
 import com.example.ludoduel.engine.PlayerColor
 import com.example.ludoduel.engine.WinReason
@@ -92,6 +94,12 @@ import com.example.ludoduel.ui.containerViewModel
 import com.example.ludoduel.ui.rememberUiPrefs
 import com.example.ludoduel.ui.theme.LocalLudoPalette
 import kotlinx.coroutines.delay
+
+/** How long the number stays visible before the only movable token moves by itself. */
+private const val AUTO_MOVE_DELAY_MILLIS = 500L
+
+/** Space between the board and each player panel. */
+private val PANEL_GAP = 10.dp
 
 @Composable
 fun GameScreen(onExit: () -> Unit) {
@@ -170,7 +178,7 @@ private fun GameContent(
     code: String,
     muted: Boolean,
     now: () -> Long,
-    onRoll: () -> Unit,
+    onRoll: (onResult: (Boolean) -> Unit) -> Unit,
     onTokenTap: (Int) -> Unit,
     onToggleMute: () -> Unit,
     onRules: () -> Unit,
@@ -185,16 +193,35 @@ private fun GameContent(
     animator.fx = LocalGameFx.current
     animator.texts = AnimatorTexts(
         plusOneTurn = stringResource(R.string.fx_plus_one_turn),
-        noMoves = stringResource(R.string.fx_no_moves),
+        noMovesSix = stringResource(R.string.fx_no_moves_six),
+        noMovesExact = stringResource(R.string.fx_no_moves_exact),
+        noMovesBoth = stringResource(R.string.fx_no_moves_both),
         threeSixes = stringResource(R.string.fx_three_sixes),
         captured = stringResource(R.string.fx_captured),
         yourTurn = stringResource(R.string.fx_your_turn),
         playersTurn = stringResource(R.string.fx_players_turn),
         ranOutOfTime = stringResource(R.string.game_timeout),
+        couldNotRoll = stringResource(R.string.fx_could_not_roll),
+        cantMove = stringResource(R.string.fx_cant_move),
+        luckyBoost = stringResource(R.string.fx_lucky_boost),
     )
+    animator.luckyBoost = ui.luckyBoost
     animator.nameOf = { if (it == ui.me) ui.myName else ui.opponentName }
     LaunchedEffect(animator) { animator.run() }
     LaunchedEffect(animator, game) { animator.submit(game) }
+    // Safety net for my roll: no confirmed roll within 5 s gives up and re-enables the die.
+    val rollState = animator.myRollState
+    LaunchedEffect(rollState) {
+        if (rollState is RollMachine.State.Waiting) {
+            delay(RollMachine.TIMEOUT_MILLIS)
+            animator.tickRoll(System.currentTimeMillis())
+        }
+    }
+    // Coming back to the app runs the same check (the timer may have paused in the background).
+    LifecycleResumeEffect(animator) {
+        animator.tickRoll(System.currentTimeMillis())
+        onPauseOrDispose { }
+    }
 
     // What the screen shows is the animator's state, which may lag the server by an animation.
     val shown = animator.shown
@@ -204,77 +231,91 @@ private fun GameContent(
     val caughtUp = !animator.busy && shown == game
     val movable = if (caughtUp) ui.movable else emptyList()
     val canRoll = caughtUp && ui.canRoll
-
+    // Exactly one token can move: move it by itself shortly after the dice has landed (the player
+    // sees the number first). Board taps do nothing meanwhile. Only while a move can be sent (online,
+    // no write running), so a move that could not be sent is tried again when it can.
+    val autoToken = if (caughtUp) LudoEngine.onlyMovableToken(s, ui.me)?.takeIf { it in movable } else null
+    LaunchedEffect(autoToken, shown.version) {
+        if (autoToken != null) {
+            delay(AUTO_MOVE_DELAY_MILLIS)
+            onTokenTap(autoToken)
+        }
+    }
     Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize().safeDrawingPadding()) {
             TopBar(code, muted, onRules, onToggleMute, onSettings)
-            // Board and both panels share the height; spare space is spread evenly so there are no big gaps.
-            Column(Modifier.weight(1f).fillMaxWidth(), verticalArrangement = Arrangement.SpaceEvenly) {
-                for (color in listOf(ui.me.opponent, ui.me)) {
-                    val isMe = color == ui.me
-                    if (isMe) {
-                        Box(
-                            Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 12.dp)
-                                // Slightly dimmed while we are offline (input is blocked then).
-                                .drawWithContent {
-                                    drawContent()
-                                    if (!ui.connected) drawRect(Color.Black.copy(alpha = 0.3f))
+            val panel = @Composable { color: PlayerColor, modifier: Modifier ->
+                val isMe = color == ui.me
+                val active = !over && s.turn == color
+                PlayerPanel(
+                    name = if (isMe) ui.myName else ui.opponentName,
+                    subtitle = stringResource(
+                        when {
+                            isMe -> R.string.game_you_label
+                            color == PlayerColor.RED -> R.string.game_red
+                            else -> R.string.game_yellow
+                        },
+                    ),
+                    color = color,
+                    active = active,
+                    deadline = shown.turnDeadline,
+                    now = now,
+                    mirrored = !isMe,
+                    modifier = modifier,
+                ) {
+                    DiceBox(active = active) {
+                        if (animator.dieOwner == color) {
+                            val die = animator.dice.getValue(color)
+                            val enabled = isMe && canRoll && animator.myRollState == RollMachine.State.Idle
+                            Die(
+                                visual = die,
+                                color = color,
+                                enabled = enabled,
+                                description = die.face?.takeIf { !enabled }
+                                    ?.let { stringResource(R.string.game_dice_description, it) }
+                                    ?: stringResource(R.string.game_roll),
+                                onRoll = {
+                                    if (animator.tapRoll(System.currentTimeMillis())) {
+                                        onRoll { sent -> if (!sent) animator.rollSendFailed() }
+                                    }
                                 },
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            val colorName = stringResource(if (ui.me == PlayerColor.RED) R.string.game_red else R.string.game_yellow)
-                            LudoBoard(
-                                animator = animator,
-                                movable = movable,
-                                colorblind = prefs.colorblind,
-                                onTokenTap = onTokenTap,
-                                description = stringResource(R.string.board_description, colorName),
-                                modifier = Modifier.fillMaxWidth(),
+                                modifier = Modifier.fillMaxSize(),
                             )
-                        }
-                    }
-                    val active = !over && s.turn == color
-                    PlayerPanel(
-                        name = if (isMe) ui.myName else ui.opponentName,
-                        subtitle = stringResource(
-                            when {
-                                isMe -> R.string.game_you_label
-                                color == PlayerColor.RED -> R.string.game_red
-                                else -> R.string.game_yellow
-                            },
-                        ),
-                        color = color,
-                        active = active,
-                        deadline = shown.turnDeadline,
-                        now = now,
-                        mirrored = !isMe,
-                        modifier = Modifier.align(if (isMe) Alignment.Start else Alignment.End).padding(horizontal = 16.dp),
-                    ) {
-                        DiceBox(active = active) {
-                            if (animator.dieOwner == color) {
-                                val die = animator.dice.getValue(color)
-                                val enabled = isMe && canRoll
-                                Die(
-                                    visual = die,
-                                    color = color,
-                                    enabled = enabled,
-                                    description = die.face?.takeIf { !enabled }
-                                        ?.let { stringResource(R.string.game_dice_description, it) }
-                                        ?: stringResource(R.string.game_roll),
-                                    onRoll = {
-                                        animator.startLocalRoll()
-                                        onRoll()
-                                    },
-                                    modifier = Modifier.fillMaxSize(),
-                                )
-                                DieFloater(die)
-                            }
+                            DieFloater(die)
                         }
                     }
                 }
             }
+            // Spare height goes above the top panel and below the bottom panel, never between a panel
+            // and the board. Each panel sits next to its own corner of the board.
+            Spacer(Modifier.weight(1f))
+            panel(ui.me.opponent, Modifier.align(Alignment.End).padding(horizontal = 8.dp))
+            Spacer(Modifier.height(PANEL_GAP))
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 8.dp)
+                    // Slightly dimmed while we are offline (input is blocked then).
+                    .drawWithContent {
+                        drawContent()
+                        if (!ui.connected) drawRect(Color.Black.copy(alpha = 0.3f))
+                    },
+                contentAlignment = Alignment.Center,
+            ) {
+                val colorName = stringResource(if (ui.me == PlayerColor.RED) R.string.game_red else R.string.game_yellow)
+                LudoBoard(
+                    animator = animator,
+                    movable = movable,
+                    tapsEnabled = autoToken == null,
+                    colorblind = prefs.colorblind,
+                    onTokenTap = onTokenTap,
+                    description = stringResource(R.string.board_description, colorName),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+            Spacer(Modifier.height(PANEL_GAP))
+            panel(ui.me, Modifier.align(Alignment.Start).padding(horizontal = 8.dp))
+            Spacer(Modifier.weight(1f))
         }
         if (over) WinOverlay(ui, shown, animator.fx, onRematch, onHome)
         PillHost(
@@ -310,7 +351,13 @@ private fun DieFloater(die: DieVisual) {
 
 /** Slim top bar: room code on the left, help and sound buttons on the right. */
 @Composable
-private fun TopBar(code: String, muted: Boolean, onRules: () -> Unit, onToggleMute: () -> Unit, onSettings: () -> Unit) {
+private fun TopBar(
+    code: String,
+    muted: Boolean,
+    onRules: () -> Unit,
+    onToggleMute: () -> Unit,
+    onSettings: () -> Unit,
+) {
     Row(
         Modifier.fillMaxWidth().height(52.dp).padding(horizontal = 12.dp),
         verticalAlignment = Alignment.CenterVertically,

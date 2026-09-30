@@ -37,6 +37,7 @@ reproducible). No recordings or third-party samples are used. They are released 
 | File (`app/src/main/res/raw/`) | Used for | How it is made |
 |---|---|---|
 | `sfx_roll.wav` | Dice roll | Irregular filtered-noise knocks that slow down and fade, like a die in a cup |
+| `sfx_clack.wav` | The die landing | Short hard knock with a woody 740 Hz ring |
 | `sfx_hop.wav` | Each token hop | Short 1.1 kHz wooden tick |
 | `sfx_capture.wav` | Capture ("bonk") | Falling pitch 520 → 150 Hz with a noise knock |
 | `sfx_home.wav` | Token reaches home | Bell-like C6–E6–G6 arpeggio |
