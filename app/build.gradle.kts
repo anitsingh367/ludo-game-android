@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
@@ -9,6 +11,10 @@ plugins {
 if (file("google-services.json").exists()) {
     apply(plugin = libs.plugins.google.services.get().pluginId)
 }
+
+// Release signing uses your own key, described in keystore.properties in the project root (never
+// committed, see README). Without that file the release build is not signed.
+val keystoreProperties = rootProject.file("keystore.properties")
 
 android {
     namespace = "com.example.ludoduel"
@@ -28,6 +34,18 @@ android {
         buildConfigField("String", "FIREBASE_EMULATOR_HOST", "\"\"")
     }
 
+    signingConfigs {
+        if (keystoreProperties.exists()) {
+            create("release") {
+                val props = Properties().apply { keystoreProperties.inputStream().use { load(it) } }
+                storeFile = file(props.getProperty("storeFile"))
+                storePassword = props.getProperty("storePassword")
+                keyAlias = props.getProperty("keyAlias")
+                keyPassword = props.getProperty("keyPassword")
+            }
+        }
+    }
+
     buildTypes {
         debug {
             // Optional, debug builds only: ./gradlew assembleDebug -PfirebaseEmulatorHost=10.0.2.2
@@ -36,6 +54,7 @@ android {
             buildConfigField("String", "FIREBASE_EMULATOR_HOST", "\"$emulatorHost\"")
         }
         release {
+            signingConfig = signingConfigs.findByName("release")
             isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),

@@ -29,6 +29,16 @@ The project builds **without** `app/google-services.json`, but that app cannot t
 it opens on a screen saying "Firebase is not set up". Follow the steps below to add the file, then
 build again. The file is in `.gitignore` because it belongs to your Firebase project.
 
+## Release APK to share
+
+1. Once, create your signing key: `tools/create_release_key.sh`. It asks for a password and writes
+   the key to `~/ludo-release-key/ludo-release.jks` and its details to `keystore.properties`
+   (both ignored by git). Back up both and keep the password: every update must use the same key,
+   or phones refuse to install it over the old version.
+2. Build: `./gradlew assembleRelease`. The APK is `app/build/outputs/apk/release/app-release.apk`.
+   Without `keystore.properties` the release APK is not signed and cannot be installed.
+3. For each new version, raise `versionCode` (and `versionName`) in `app/build.gradle.kts`.
+
 ## Setup (step by step)
 
 ### 1. Create a Firebase project and add the Android app

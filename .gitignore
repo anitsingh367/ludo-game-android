@@ -11,6 +11,10 @@
 .kotlin/
 # Firebase config is private to your Firebase project. Download it yourself (see README).
 app/google-services.json
+# Your release signing key and its passwords (see README). Never commit these.
+keystore.properties
+*.jks
+*.keystore
 # Firebase emulator / node tooling for the rules tests
 rules-tests/node_modules/
 *-debug.log
