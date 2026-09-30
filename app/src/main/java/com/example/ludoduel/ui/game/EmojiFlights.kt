@@ -73,6 +73,20 @@ object EmojiArt {
 
     fun rawRes(emojiId: String): Int = raw.getValue(emojiId)
 
+    /**
+     * The point in each animation (0..1) where it clearly looks like the emoji, shown in the tray and
+     * while it flies. Picked by rendering 12 frames of each: most look right at the start; 😢 needs
+     * its tear, 😡 its red face, 😈 its horns and 🎉 its confetti.
+     */
+    private val preview = mapOf(
+        "1f602" to 0f, "1f60d" to 0f, "1f60e" to 0f, "1f914" to 0f,
+        "1f62e" to 0f, "1f622" to 6 / 11f, "1f621" to 6 / 11f, "1f608" to 6 / 11f,
+        "1f44e" to 0f, "1f44f" to 0f, "1f64f" to 0f, "1f525" to 0f,
+        "1f389" to 4 / 11f, "1f480" to 0f, "1f91e" to 0f, "1f44b" to 0f,
+    )
+
+    fun previewProgress(emojiId: String): Float = preview.getValue(emojiId)
+
     /** The emoji as a character, for the chat history and accessibility. */
     fun text(emojiId: String): String = String(Character.toChars(emojiId.toInt(16)))
 }
@@ -172,7 +186,7 @@ private fun Flight(emoji: ChatEvent.Emoji, slot: Int, spots: PanelSpots, fx: Gam
     val scale = grow * pop * (1f - 0.4f * fade.value)
     LottieAnimation(
         composition = composition,
-        progress = { if (landed) playing else 0f },
+        progress = { if (landed) playing else EmojiArt.previewProgress(emoji.emojiId) },
         renderMode = RenderMode.SOFTWARE,
         modifier = Modifier
             .size(EMOJI_SIZE)
@@ -242,8 +256,8 @@ fun EmojiButton(description: String, enabled: Boolean, onClick: () -> Unit, modi
 }
 
 /**
- * The tray of 16 emojis (4 x 4) above the emoji button. Each shows its first frame and plays once
- * while pressed. A tap sends it and closes the tray; when [onPick] refuses (too soon), the tray
+ * The tray of 16 emojis (4 x 4) above the emoji button. Each shows its preview frame and plays once
+ * from the start while pressed. A tap sends it and closes the tray; when [onPick] refuses (too soon), the tray
  * shakes gently instead.
  */
 @Composable
@@ -288,8 +302,9 @@ private fun TrayEmoji(emojiId: String, onClick: () -> Unit) {
     val composition by rememberLottieComposition(LottieCompositionSpec.RawRes(EmojiArt.rawRes(emojiId)))
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
-    // Plays once from the start each time it is pressed; the first frame otherwise.
+    // Plays once from the start each time it is pressed; the preview frame otherwise.
     val progress by animateLottieCompositionAsState(composition, isPlaying = pressed, iterations = 1, restartOnPlay = true)
+    val preview = EmojiArt.previewProgress(emojiId)
     Box(
         Modifier
             .size(56.dp)
@@ -298,6 +313,6 @@ private fun TrayEmoji(emojiId: String, onClick: () -> Unit) {
             .semantics { contentDescription = EmojiArt.text(emojiId) },
         contentAlignment = Alignment.Center,
     ) {
-        LottieAnimation(composition, progress = { progress }, renderMode = RenderMode.SOFTWARE, modifier = Modifier.size(46.dp))
+        LottieAnimation(composition, progress = { if (pressed) progress else preview }, renderMode = RenderMode.SOFTWARE, modifier = Modifier.size(46.dp))
     }
 }

@@ -1,6 +1,8 @@
 package com.example.ludoduel.ui.game
 
+import com.example.ludoduel.data.ChatRules
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class EmojiFlightsTest {
@@ -20,5 +22,13 @@ class EmojiFlightsTest {
         flights.done(emoji(4))
         flights.done(emoji(5))
         assertEquals(emptyList<Pair<Int, ChatEvent.Emoji>>(), flights.flying.toList())
+    }
+
+    @Test fun `every emoji has a preview frame and an animation file`() {
+        for (id in ChatRules.EMOJI_IDS) {
+            val p = EmojiArt.previewProgress(id)
+            assertTrue("$id preview $p", p in 0f..1f)
+            EmojiArt.rawRes(id)
+        }
     }
 }

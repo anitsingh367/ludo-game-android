@@ -512,9 +512,10 @@ No change to the rules or the engine.
   hardware path made the whole emulator process die (both emulators, every time the tray opened).
   With `RenderMode.SOFTWARE` it works. At 46–64 dp software drawing is cheap, and it avoids depending
   on a phone's graphics driver, so it is used everywhere.
-- **First frames:** the tray shows each emoji's first frame, as asked. For three of them the first
-  frame looks different from the emoji itself (😈 starts as a plain smile, 😢 before its tear, 🎉
-  as the cone only).
+- **Preview frames:** the tray (and a flying emoji before it lands) shows a frame where each emoji
+  clearly looks like itself, picked by rendering 12 frames of every animation (`EmojiArt.preview`).
+  12 look right at the start; 😢 (its tear), 😡 (red face), 😈 (horns) use frame 6 of 11 and 🎉
+  (confetti) frame 4 of 11. Pressing plays the animation once from the start.
 - **How long an emoji shows after landing:** the animations are 0.7–5 s long. It plays for 2 s,
   looping, then fades and shrinks (300 ms). Short ones repeat, long ones are cut.
 - **Flight:** from the sender's avatar to next to the receiver's name, on a curve (700 ms,
