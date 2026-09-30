@@ -479,3 +479,23 @@ edge cases 31 and 32).
   for its roll, the die stayed disabled for up to 5 s and then showed a false "Couldn't roll".
   `RollMachine.snapped` now also clears the waiting state; a roll of mine arriving later is still
   shown. New test in `RollMachineTest`.
+
+## Final review and stress test before release (branch `safe-pairs`)
+
+- **Fixes from a code review of the whole branch:**
+  - The automatic single move now fires only while a move can be sent (online, no write running).
+    Before, a move dropped by a short disconnect was never retried and board taps stayed off until
+    the 30-second timer moved the token.
+  - A refused die tap no longer counts as "tapped for this roll" (only a tap that races the timer's
+    automatic roll does), so it cannot delay the automatic move of a player who is away.
+  - `LudoEngine.isValid` rejects a MOVE state with no legal move. Only a modified app could write
+    one; it crashed the other phone before, and now shows "Something went wrong with this game".
+- **End-to-end on two emulators (local Firebase emulators):** a full game played by tapping through
+  both apps (370 updates: 193 rolls, 176 moves, 6 captures, won by bringing all four home); rematch
+  (loser first); all three "No moves" pills; "Can't move" on a token that cannot move (nothing
+  moves); landing on an opponent pair (shared, no capture, turn passes); disconnect and reconnect
+  ("Opponent reconnecting…", "Reconnecting…", then the board catches up); 3 missed turns forfeit;
+  kill and rejoin; wrong code; code input clean-up; room full; room closed; leave (both sides);
+  3,000 random taps on each phone (no crash, no "not responding").
+- **Seen only under very heavy load (load average above 30):** the host's first turn can run out
+  while its screen is still loading, because the turn clock starts when the guest joins. Not changed.
