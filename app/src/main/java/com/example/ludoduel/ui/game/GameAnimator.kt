@@ -47,6 +47,8 @@ class TokenVisual(position: Offset, scale: Float) {
     var hop by mutableFloatStateOf(0f)
     var squash by mutableFloatStateOf(0f)
     var flash by mutableFloatStateOf(0f)
+    /** Sideways offset in pixels while shaking ("Can't move"). */
+    var shakeX by mutableFloatStateOf(0f)
 
     fun look() = PawnLook(scale = scale * (1f + 0.15f * hop), liftPx = liftPx, squash = squash, flash = flash)
 }
@@ -66,6 +68,7 @@ data class AnimatorTexts(
     /** Format with the player's name. */
     val ranOutOfTime: String,
     val couldNotRoll: String,
+    val cantMove: String,
     val luckyBoost: String,
 )
 
@@ -87,7 +90,7 @@ class GameAnimator(
     private val palette: LudoPalette,
 ) {
     var fx: GameFx = SilentFx
-    var texts = AnimatorTexts("", "", "", "", "", "", "", "%1\$s", "%1\$s", "", "")
+    var texts = AnimatorTexts("", "", "", "", "", "", "", "%1\$s", "%1\$s", "", "", "")
     /** The room's Lucky Boost setting (for the "Lucky Boost!" message). */
     var luckyBoost = false
     var nameOf: (PlayerColor) -> String = { "" }
@@ -299,6 +302,18 @@ class GameAnimator(
             }
         } finally {
             die.rest(value)
+        }
+    }
+
+    /** A tap on my token that cannot move: a small shake and a short "Can't move" (not repeated while shown). */
+    fun cantMove(key: TokenKey) {
+        if (pills.current?.text != texts.cantMove) pills.show(texts.cantMove, Color(0xFF546E7A))
+        val token = tokens.getValue(key)
+        scope.launch {
+            animate(0f, 1f, animationSpec = tween(300, easing = LinearEasing)) { t, _ ->
+                token.shakeX = sin(t * 6 * PI).toFloat() * 4 * density.density * (1 - t)
+            }
+            token.shakeX = 0f
         }
     }
 

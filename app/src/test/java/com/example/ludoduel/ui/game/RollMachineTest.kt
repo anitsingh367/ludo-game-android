@@ -97,6 +97,16 @@ class RollMachineTest {
         assertTrue(m.rollConfirmed(10))
     }
 
+    @Test fun `a jump while waiting frees the die without a false "Couldn't roll"`() {
+        val m = RollMachine()
+        m.tap(0)
+        m.snapped(9)
+        assertTrue(m.canTap)
+        assertFalse(m.tick(10_000)) // no "Couldn't roll" later
+        assertFalse(m.sendFailed())
+        assertTrue(m.rollConfirmed(10)) // my roll, arriving after the jump, is still shown
+    }
+
     @Test fun `animation finished for another version does not end the current one`() {
         val m = RollMachine()
         m.rollConfirmed(5)

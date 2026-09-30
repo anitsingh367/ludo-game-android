@@ -104,6 +104,25 @@ fun LudoBoard(
                         if (!currentTapsEnabled) return@detectTapGestures
                         val unit = size.width / BoardGeometry.SIZE.toFloat()
                         val myTokens = animator.shown.state.tokensOf(me)
+                        val visual = { i: Int -> animator.tokens.getValue(TokenKey(me, i)) }
+                        // A tap directly on one of my tokens means that token: it moves if it can,
+                        // and otherwise nothing moves (it shakes: "Can't move"). Only a tap that is
+                        // not on one of my tokens looks for the nearest movable token.
+                        if (currentMovable.isNotEmpty()) {
+                            val direct = tokenUnderTap(tap / unit, myTokens, { visual(it).pos }) {
+                                visual(it).scale * if (it in tooClose) TOO_CLOSE_GROW else 1f
+                            }
+                            if (direct != null) {
+                                tooClose = emptyList()
+                                if (direct in currentMovable) {
+                                    fx.buzz(Buzz.PICK)
+                                    currentTap(direct)
+                                } else {
+                                    animator.cantMove(TokenKey(me, direct))
+                                }
+                                return@detectTapGestures
+                            }
+                        }
                         // After "too close", the second tap only chooses between those two squares.
                         val candidates = if (tooClose.isEmpty()) {
                             currentMovable
@@ -111,7 +130,7 @@ fun LudoBoard(
                             val squares = tooClose.map { myTokens[it] }.toSet()
                             currentMovable.filter { myTokens[it] in squares }
                         }
-                        val result = pickToken(tap / unit, candidates, myTokens) { animator.tokens.getValue(TokenKey(me, it)).pos }
+                        val result = pickToken(tap / unit, candidates, myTokens) { visual(it).pos }
                         when (result) {
                             is TapResult.Pick -> {
                                 tooClose = emptyList()
@@ -141,10 +160,10 @@ fun LudoBoard(
                 )
             for (key in order) {
                 val token = animator.tokens.getValue(key)
-                val center = token.pos * unit
+                val center = token.pos * unit + Offset(token.shakeX, 0f)
                 val canMove = key in movableKeys
                 var look = token.look()
-                if (key.color == me && key.index in tooClose) look = look.copy(scale = look.scale * 1.3f)
+                if (key.color == me && key.index in tooClose) look = look.copy(scale = look.scale * TOO_CLOSE_GROW)
                 val s = look.scale * unit
                 if (canMove) {
                     // A steady soft glow under the token plus a ring that pulses outwards, both
@@ -193,6 +212,17 @@ sealed interface TapResult {
 const val TAP_RADIUS = 1.5f
 /** Two candidates closer in distance than this (in squares) are "too close to call". */
 const val TOO_CLOSE = 0.3f
+/** How much "too close" candidates grow until the second tap. */
+const val TOO_CLOSE_GROW = 1.3f
+
+/**
+ * Which of my tokens is drawn under the tap (in board squares), or null. [scaleOf] is the token's
+ * size as drawn. Tokens on one square make the same move, so the nearest one is enough.
+ */
+internal fun tokenUnderTap(tap: Offset, myTokens: List<Int>, positionOf: (Int) -> Offset, scaleOf: (Int) -> Float): Int? =
+    myTokens.indices
+        .filter { myTokens[it] != HOME && tap - positionOf(it) in PawnShape.envelope(scaleOf(it)) }
+        .minByOrNull { (positionOf(it) - tap).getDistance() }
 
 /**
  * Finds the token a tap means, in board squares. Only tokens that can legally move are considered,

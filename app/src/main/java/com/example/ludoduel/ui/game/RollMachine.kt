@@ -72,11 +72,11 @@ class RollMachine(private val timeoutMillis: Long = TIMEOUT_MILLIS) {
 
     /**
      * The board jumped to a later state without animating (for example after reconnecting). Nothing
-     * of mine is animating any more.
+     * of mine is animating or waiting any more: a roll of mine that arrives later is still shown.
      */
     fun snapped(version: Long) {
         shownVersion = maxOf(shownVersion, version)
-        if (state is State.Showing) state = State.Idle
+        state = State.Idle
     }
 
     companion object {

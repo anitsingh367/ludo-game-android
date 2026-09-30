@@ -57,6 +57,8 @@ class GameViewModel(private val c: AppContainer, saved: SavedStateHandle) : View
     private val uid = MutableStateFlow<String?>(null)
     /** True while one of my transactions is running. Blocks further input (double taps). */
     private val busy = MutableStateFlow(false)
+    /** The game version I last tapped the die at (see [roll]). */
+    private var rollTappedAt: Long? = null
     private var presenceAcquired = false
 
     private val room: StateFlow<RoomEvent?> =
@@ -85,15 +87,22 @@ class GameViewModel(private val c: AppContainer, saved: SavedStateHandle) : View
 
     fun serverNow(): Long = c.clock.now()
 
-    /** Sends my roll. [onResult] is told whether the roll was written (false: ignored or refused). */
+    /**
+     * Sends my roll. [onResult] is told whether a roll is on its way (false: ignored or refused).
+     * My tap is remembered for this turn: if the timer's automatic roll is being written at the same
+     * moment, my tap still wins (that roll counts as mine and no automatic move follows it, see
+     * [playTimers]), and the die waits for that roll.
+     */
     fun roll(onResult: (Boolean) -> Unit) {
         val ui = ui.value
         val game = ui.game
-        if (game == null || !ui.canRoll) {
-            onResult(false)
-            return
+        val myRoll = game != null && game.state.turn == ui.me && game.state.phase == Phase.ROLL
+        if (myRoll) rollTappedAt = game.version
+        when {
+            myRoll && busy.value -> onResult(true)
+            game == null || !ui.canRoll -> onResult(false)
+            else -> viewModelScope.launch { onResult(act(game, Action.Roll(rollValue(game)))) }
         }
-        viewModelScope.launch { onResult(act(game, Action.Roll(rollValue(game)))) }
     }
 
     fun move(token: Int) {
@@ -218,8 +227,10 @@ class GameViewModel(private val c: AppContainer, saved: SavedStateHandle) : View
                     val legal = LudoEngine.legalMoves(s, input.me, checkNotNull(s.dice))
                     val last = s.lastAction
                     when {
-                        // The roll was automatic: finish the turn right away with the first legal move.
-                        last?.type == ActionType.ROLL && last.by == input.me && last.auto -> {
+                        // The roll was automatic and I did not tap the die for it: finish the turn
+                        // right away with the first legal move. If I did tap, I choose my move within
+                        // the fresh move time, like after any roll.
+                        last?.type == ActionType.ROLL && last.by == input.me && last.auto && rollTappedAt != game.version - 1 -> {
                             delay(AUTO_MOVE_DELAY_MILLIS)
                             act(game, Action.Move(legal.first(), auto = true))
                         }

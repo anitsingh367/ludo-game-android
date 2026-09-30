@@ -77,7 +77,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.example.ludoduel.BuildConfig
 import com.example.ludoduel.R
 import com.example.ludoduel.data.GameReducer
 import com.example.ludoduel.data.RoomGame
@@ -203,6 +202,7 @@ private fun GameContent(
         playersTurn = stringResource(R.string.fx_players_turn),
         ranOutOfTime = stringResource(R.string.game_timeout),
         couldNotRoll = stringResource(R.string.fx_could_not_roll),
+        cantMove = stringResource(R.string.fx_cant_move),
         luckyBoost = stringResource(R.string.fx_lucky_boost),
     )
     animator.luckyBoost = ui.luckyBoost
@@ -240,35 +240,9 @@ private fun GameContent(
             onTokenTap(autoToken)
         }
     }
-    // Debug builds: a stress test that rolls and moves by itself 200 times.
-    var stressRunning by remember { mutableStateOf(false) }
-    if (BuildConfig.DEBUG) {
-        StressTestEffect(
-            running = stressRunning,
-            rolls = 200,
-            stuckMillis = 60_000,
-            canRoll = canRoll && animator.myRollState == RollMachine.State.Idle,
-            movable = movable,
-            autoMoving = autoToken != null,
-            over = over,
-            onRoll = {
-                if (animator.tapRoll(System.currentTimeMillis())) {
-                    onRoll { sent -> if (!sent) animator.rollSendFailed() }
-                }
-            },
-            onMove = onTokenTap,
-            onRematch = onRematch,
-            onFinished = { message ->
-                android.util.Log.i("LudoStress", message) // debug builds only: readable with adb logcat
-                stressRunning = false
-                animator.pills.show(message, palette.amber)
-            },
-        )
-    }
-
     Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize().safeDrawingPadding()) {
-            TopBar(code, muted, onRules, onToggleMute, onSettings, onStress = { stressRunning = true }.takeIf { BuildConfig.DEBUG && !stressRunning })
+            TopBar(code, muted, onRules, onToggleMute, onSettings)
             val panel = @Composable { color: PlayerColor, modifier: Modifier ->
                 val isMe = color == ui.me
                 val active = !over && s.turn == color
@@ -382,8 +356,6 @@ private fun TopBar(
     onRules: () -> Unit,
     onToggleMute: () -> Unit,
     onSettings: () -> Unit,
-    /** Debug builds only: starts the 200-roll stress test. */
-    onStress: (() -> Unit)?,
 ) {
     Row(
         Modifier.fillMaxWidth().height(52.dp).padding(horizontal = 12.dp),
@@ -398,9 +370,6 @@ private fun TopBar(
                 .padding(horizontal = 14.dp, vertical = 6.dp),
         )
         Spacer(Modifier.weight(1f))
-        if (onStress != null) {
-            TextButton(onClick = onStress) { Text("×200", color = Color.White, fontWeight = FontWeight.Bold) }
-        }
         GlyphButton(Glyph.HELP, stringResource(R.string.game_how_to_play), onRules)
         GlyphButton(
             if (muted) Glyph.SOUND_OFF else Glyph.SOUND_ON,

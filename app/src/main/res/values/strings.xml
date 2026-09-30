@@ -59,6 +59,7 @@
     <string name="game_yellow">Yellow</string>
     <string name="game_timeout">%1$s ran out of time</string>
     <string name="fx_plus_one_turn">+1 turn!</string>
+    <string name="fx_cant_move">Can\'t move</string>
     <string name="fx_no_moves_six">No moves — need a 6 to come out</string>
     <string name="fx_no_moves_exact">No moves — need exact number to reach home</string>
     <string name="fx_no_moves_both">No moves — need a 6 or exact number</string>

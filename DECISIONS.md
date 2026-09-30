@@ -353,9 +353,9 @@ no confirmation within 5 seconds (also checked when the app comes back to the fo
 the die to idle with the pill "Couldn't roll — tap again". The optimistic loop no longer exists. The
 turn timer's automatic play lives in the ViewModel and does not depend on the screen.
 
-**Stress test.** Debug builds have a "×200" button in the top bar: it rolls and moves 200 times
-through the same path as a player's taps (continuing through rematches) and reports if it ever
-waits 60 seconds with nothing to do. Results are also written to the device log (`LudoStress`).
+**Stress test.** At first a debug-only "×200" button in the top bar (it passed on two emulators).
+Later removed from the app at your request; it is now the automated test `RollStressTest` (see
+"Tap and timer fixes" at the end).
 
 ### 4. Real 3D dice
 
@@ -450,3 +450,32 @@ edge cases 31 and 32).
   on (shared), and "the player chooses when one token is behind an opponent pair". Landing on a
   single opponent token is covered by the existing test 30. The 1,000-game random test passes with
   the new rules. Rules tests: schema 3 accepted, 2 and 4 refused.
+
+## Tap and timer fixes (branch `safe-pairs`)
+
+- **A tap directly on my own token means that token.** If it can move, it moves. If it cannot, no
+  other token moves: it shakes a little and the pill "Can't move" shows (not repeated while it is
+  up). Only a tap that is not on one of my tokens uses the nearest-movable-token helper (1.5 squares,
+  "too close" second tap). "Directly on" = inside the area the pawn draws at its current size
+  (`PawnShape.envelope`, the same one the bounds test uses), so a stacked token counts at its smaller
+  size and a "too close" token at its enlarged size. This only applies while I am choosing a move.
+  Code: `tokenUnderTap` and the tap handler in `LudoBoard.kt`, `GameAnimator.cantMove`; tests in
+  `PickTokenTest`.
+- **My die tap wins over the timer's automatic roll.** A tap that registers before the deadline
+  already won (it starts my write at once, and the timer then finds a write running and stops). The
+  gap was a tap that registers (finger lifted) while the timer's automatic roll is being written:
+  the tap was refused ("Couldn't roll") and the app then moved the first legal token by itself 0.5 s
+  after that roll. Now `GameViewModel.roll` remembers the tap for that turn; the die waits for the
+  roll being written instead of failing; and `playTimers` skips the automatic move after an
+  automatic roll that I tapped for. I choose my move within the fresh move time that every roll
+  sets (30 s, the normal move timer; nothing new was added). The automatic roll still counts as a
+  missed turn in the data, and my manual move resets that count to 0 as usual. The opponent's
+  Timeout rule (5 s after the deadline) is unchanged. Not covered by a unit test (the ViewModel needs
+  Firebase); it needs checking on a phone.
+- **×200 button removed.** The stress test is now `RollStressTest`: 200 taps on my die through
+  `RollMachine` while the engine plays the game, with a refused write, a 5 s timeout, a repeated
+  update or a board jump now and then. The die must be ready again after every roll.
+- **Found by that test:** after a board jump (for example on reconnecting) while my die was waiting
+  for its roll, the die stayed disabled for up to 5 s and then showed a false "Couldn't roll".
+  `RollMachine.snapped` now also clears the waiting state; a roll of mine arriving later is still
+  shown. New test in `RollMachineTest`.
