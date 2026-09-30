@@ -159,7 +159,7 @@ paid Blaze plan.
 | 35 | Yellow wrap 51 → 0 | `LudoEngine.absoluteSquare`; tests 35 |
 | 36 | Each color only in its own home column | progress 51..55 never maps to the shared track; tests 36; `BoardGeometryTest` |
 | 37 | Nobody can move → still passes | `LudoEngine.roll`; test 37 |
-| 38 | `schemaVersion` ≠ 3 (1 before Lucky Boost, 2 before safe pairs) → "Please update the app" | `joinRoom` (`UpdateRequired`); `GameViewModel.buildUi` (`UPDATE_REQUIRED`) |
+| 38 | `schemaVersion` ≠ 4 (1 before Lucky Boost, 2 before safe pairs, 3 before chat) → "Please update the app" | `joinRoom` (`UpdateRequired`); `GameViewModel.buildUi` (`UPDATE_REQUIRED`) |
 | 39 | Invalid game state → "Something went wrong with this game" + Home | `data/GameCodec.kt` `decode` + `LudoEngine.isValid`; `Room.gameCorrupt`; `GameScreen.kt` `ErrorPane`; `GameCodecTest` |
 | 40 | Anonymous sign-in, reused; retry screen when it fails | `data/AuthRepository.kt`; `ui/SplashScreen.kt` (retry) |
 | 41 | Game over: winner, reason, Rematch / Home | `GameScreen.kt` `GameOverCard` |
@@ -499,3 +499,67 @@ edge cases 31 and 32).
   3,000 random taps on each phone (no crash, no "not responding").
 - **Seen only under very heavy load (load average above 30):** the host's first turn can run out
   while its screen is still loading, because the turn clock starts when the guest joins. Not changed.
+
+## Chat and animated emoji reactions (branch `chat-emoji`)
+
+No change to the rules or the engine.
+
+- **Emoji set:** all 16 requested emojis exist in Google's Noto Emoji Animation set; none was swapped.
+  They are bundled in `res/raw` as `emoji_<code point>.json` (about 1.1 MB, unchanged), never
+  downloaded at runtime, and played with Airbnb's `lottie-compose`. Credit: Settings → Credits and
+  `ASSETS.md` (CC BY 4.0).
+- **Software rendering for Lottie:** on the test emulators, drawing the emojis with Lottie's default
+  hardware path made the whole emulator process die (both emulators, every time the tray opened).
+  With `RenderMode.SOFTWARE` it works. At 46–64 dp software drawing is cheap, and it avoids depending
+  on a phone's graphics driver, so it is used everywhere.
+- **First frames:** the tray shows each emoji's first frame, as asked. For three of them the first
+  frame looks different from the emoji itself (😈 starts as a plain smile, 😢 before its tear, 🎉
+  as the cone only).
+- **How long an emoji shows after landing:** the animations are 0.7–5 s long. It plays for 2 s,
+  looping, then fades and shrinks (300 ms). Short ones repeat, long ones are cut.
+- **Flight:** from the sender's avatar to next to the receiver's name, on a curve (700 ms,
+  ease-in-out), growing from 60% to 64 dp, with a trail of fading dots. It lands above the top panel
+  or below the bottom panel, so it does not cover the board. Then a bounce, the animation, a "pop"
+  (respects Sound) and, on the receiver's phone, a light vibration (respects Vibration). At most 3
+  fly at once; more wait. Each flying emoji has a slot (0–2) that moves its landing spot 60 dp
+  sideways.
+- **Taps:** the overlay (flights and bubbles) has no touch handling at all, so taps reach the board
+  and the dice. `EmojiOverlayTapTest` (Robolectric) taps a token under a flying emoji. It was also
+  checked that the test fails if the overlay takes taps.
+- **Old emojis are not replayed:** `NewMessages` treats the first snapshot after opening the screen,
+  and the first after a real reconnect (online → offline → online), as history.
+- **Rate limits** (app side): 1 emoji per 2 s and 1 text or phrase per second, per player. A refused
+  emoji shakes the tray. The security rules do not rate-limit.
+- **Unread badge and bubbles** count only the opponent's texts and phrases (emojis show as flights).
+  Opening the chat clears the badge.
+- **Chat sheet:** half the screen height; the keyboard pushes the field up (checked on the emulator:
+  Send stays visible). Also reachable from the game over screen (chat button with badge). Text is
+  plain; nothing becomes a link. Quick phrases are sent as type "phrase" in English (the other player
+  sees the same words).
+- **Mute opponent** (Settings, in a game only): hides their messages, bubbles and emojis for the
+  rest of this game screen. My own sending still works. It is not saved.
+- **Report** (chat menu): after a confirmation, saves `reports/{pushId}` with the room code, both
+  uids, the last 20 messages (both players) and the server time. Nobody can read reports through the
+  app.
+- **Data:** `rooms/{code}/chat/{pushId}` with `uid`, `type`, `text` or `emojiId`, `seq`, `sentAt`
+  (server time), and `rooms/{code}/chatSeq`.
+  - **Why `seq`/`chatSeq` were added:** the rules language cannot count children, so "delete only to
+    trim" could not be written with the requested fields alone. Each message has a sequence number.
+    `chatSeq` must go up by exactly 1 in the same write that adds a message. A message can be deleted
+    only when `seq <= chatSeq - 50`. If both players send at the same moment, one write is refused
+    and the app retries with the next number.
+- **Security rules:** chat readable and writable only by the two players; `uid` must be the writer;
+  `type` one of three; `text` 1–100 characters; `emojiId` one of the 16; `sentAt` must be the server
+  time; no edits. Reports are write-only, by a player of that room, about the other player.
+  `schemaVersion` is now **4**. **The rules must be deployed again** (not done: waiting for you).
+- **Tests:** `ChatTest` (text clean-up and length, both rate limits, no replay on open and on
+  reconnect, trimming to 50, decoding), `EmojiFlightsTest` (at most 3, slots, queue order),
+  `EmojiOverlayTapTest`; rules tests for chat and reports (non-member, sending as the other player,
+  101 characters, unknown emoji, server time, sequence numbers, no edits, trimming, reports, schema
+  4 accepted and 3 refused).
+- **New sound:** `sfx_pop.wav`, generated last by `tools/generate_sounds.py` so every existing sound
+  stays byte-for-byte the same.
+- **Checked on two emulators (local Firebase emulators):** tray; emoji flight on both phones
+  (sender: to the opponent's panel; receiver: from the sender's panel to their own); chat with text
+  (spaces cleaned), quick phrase, bubble and unread badge; keyboard; game over chat; report saved;
+  mute hides everything from the opponent while my own sending works; emoji rate limit; credits.

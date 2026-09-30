@@ -174,6 +174,12 @@ def your_turn():
     return out
 
 
+def pop():
+    # A soft bubble "pop" for an emoji arriving: a quick upward blip with a tiny click.
+    out = tone(520, 0.12, 0.7, decay=28, attack=0.003, harmonics=((1, 1.0), (2, 0.18)), glide_to=980)
+    return mix(out, noise_burst(0.012, 0.25, decay=260, lowpass=0.5))
+
+
 if __name__ == "__main__":
     os.makedirs(OUT, exist_ok=True)
     write("sfx_roll", dice_roll(), peak=0.55)
@@ -186,3 +192,6 @@ if __name__ == "__main__":
     write("sfx_lose", lose(), peak=0.45)
     write("sfx_click", click(), peak=0.4)
     write("sfx_your_turn", your_turn(), peak=0.45)
+    # Keep new sounds last: they draw from the same random sequence, and generating them earlier
+    # would change the noise in every sound after them.
+    write("sfx_pop", pop(), peak=0.4)

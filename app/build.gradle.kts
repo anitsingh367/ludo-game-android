@@ -28,8 +28,8 @@ android {
         applicationId = "com.example.ludoduel"
         minSdk = 26
         targetSdk = 37
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 2
+        versionName = "1.1"
         // Empty = use the real Firebase project from google-services.json.
         buildConfigField("String", "FIREBASE_EMULATOR_HOST", "\"\"")
     }
@@ -70,6 +70,10 @@ android {
         compose = true
         buildConfig = true
     }
+    // Robolectric (UI tests that run with the unit tests) needs the app's resources.
+    testOptions {
+        unitTests.isIncludeAndroidResources = true
+    }
 }
 
 dependencies {
@@ -85,7 +89,10 @@ dependencies {
     implementation(libs.androidx.compose.ui.graphics)
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.compose.material3)
+    // Plays the bundled animated emojis (Lottie files in res/raw).
+    implementation(libs.lottie.compose)
     debugImplementation(libs.androidx.compose.ui.tooling)
+    debugImplementation(libs.androidx.compose.ui.test.manifest)
 
     implementation(platform(libs.firebase.bom))
     implementation(libs.firebase.auth)
@@ -93,4 +100,7 @@ dependencies {
     implementation(libs.kotlinx.coroutines.play.services)
 
     testImplementation(libs.junit)
+    testImplementation(libs.robolectric)
+    testImplementation(platform(libs.androidx.compose.bom))
+    testImplementation(libs.androidx.compose.ui.test.junit4)
 }

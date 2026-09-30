@@ -94,6 +94,12 @@ import com.example.ludoduel.ui.containerViewModel
 import com.example.ludoduel.ui.rememberUiPrefs
 import com.example.ludoduel.ui.theme.LocalLudoPalette
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalContext
+import android.widget.Toast
 
 /** How long the number stays visible before the only movable token moves by itself. */
 private const val AUTO_MOVE_DELAY_MILLIS = 500L
@@ -105,7 +111,11 @@ private val PANEL_GAP = 10.dp
 fun GameScreen(onExit: () -> Unit) {
     val vm = containerViewModel { c, saved -> GameViewModel(c, saved) }
     val ui by vm.ui.collectAsStateWithLifecycle()
+    val chat by vm.chat.collectAsStateWithLifecycle()
     val muted by vm.muted.collectAsStateWithLifecycle()
+    var showChat by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(showChat) { vm.setChatOpen(showChat) }
+    val context = LocalContext.current
     var confirmLeave by rememberSaveable { mutableStateOf(false) }
     var showRules by rememberSaveable { mutableStateOf(false) }
     var showSettings by rememberSaveable { mutableStateOf(false) }
@@ -148,6 +158,10 @@ fun GameScreen(onExit: () -> Unit) {
                     onSettings = { showSettings = true },
                     onRematch = vm::requestRematch,
                     onHome = exit,
+                    chat = chat,
+                    chatEvents = vm.chatEvents,
+                    onOpenChat = { showChat = true },
+                    onEmoji = vm::sendEmoji,
                 )
             }
         }
@@ -168,7 +182,24 @@ fun GameScreen(onExit: () -> Unit) {
         )
     }
     if (showRules) HowToPlaySheet(onDismiss = { showRules = false })
-    if (showSettings) SettingsSheet(onDismiss = { showSettings = false })
+    if (showSettings) {
+        SettingsSheet(onDismiss = { showSettings = false }, muteOpponent = chat.muteOpponent, onMuteOpponent = vm::setMuteOpponent)
+    }
+    if (showChat && ui.status == GameStatus.READY) {
+        val reportDone = stringResource(R.string.chat_report_done)
+        val reportFailed = stringResource(R.string.chat_report_failed)
+        ChatSheet(
+            chat = chat,
+            colorOf = { uid -> if (uid == chat.myUid) ui.me else ui.me.opponent },
+            opponentName = ui.opponentName,
+            onSendText = vm::sendText,
+            onPhrase = vm::sendPhrase,
+            onReport = {
+                vm.reportOpponent { ok -> Toast.makeText(context, if (ok) reportDone else reportFailed, Toast.LENGTH_SHORT).show() }
+            },
+            onDismiss = { showChat = false },
+        )
+    }
 }
 
 @Composable
@@ -185,6 +216,10 @@ private fun GameContent(
     onSettings: () -> Unit,
     onRematch: () -> Unit,
     onHome: () -> Unit,
+    chat: ChatUi,
+    chatEvents: Flow<ChatEvent>,
+    onOpenChat: () -> Unit,
+    onEmoji: (String) -> Boolean,
 ) {
     val prefs = rememberUiPrefs()
     val density = LocalDensity.current
@@ -241,9 +276,25 @@ private fun GameContent(
             onTokenTap(autoToken)
         }
     }
+    // Emoji flights and speech bubbles, for new messages only (see GameViewModel.watchChat).
+    val flights = remember { EmojiFlights() }
+    var bubble by remember { mutableStateOf<ChatEvent.Bubble?>(null) }
+    LaunchedEffect(chatEvents) {
+        chatEvents.collect { event ->
+            when (event) {
+                is ChatEvent.Emoji -> flights.add(event)
+                is ChatEvent.Bubble -> bubble = event
+            }
+        }
+    }
+    PreloadEmojis()
+    var showTray by remember { mutableStateOf(false) }
+    // Where the panels are, for the flights and bubbles (all in root coordinates; the screen fills the root).
+    var myPanel by remember { mutableStateOf<Rect?>(null) }
+    var theirPanel by remember { mutableStateOf<Rect?>(null) }
     Box(Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize().safeDrawingPadding()) {
-            TopBar(code, muted, onRules, onToggleMute, onSettings)
+            TopBar(code, muted, onRules, onToggleMute, onSettings, chat.unread, onOpenChat)
             val panel = @Composable { color: PlayerColor, modifier: Modifier ->
                 val isMe = color == ui.me
                 val active = !over && s.turn == color
@@ -289,7 +340,10 @@ private fun GameContent(
             // Spare height goes above the top panel and below the bottom panel, never between a panel
             // and the board. Each panel sits next to its own corner of the board.
             Spacer(Modifier.weight(1f))
-            panel(ui.me.opponent, Modifier.align(Alignment.End).padding(horizontal = 8.dp))
+            panel(
+                ui.me.opponent,
+                Modifier.align(Alignment.End).padding(horizontal = 8.dp).onGloballyPositioned { theirPanel = it.boundsInRoot() },
+            )
             Spacer(Modifier.height(PANEL_GAP))
             Box(
                 Modifier
@@ -314,15 +368,27 @@ private fun GameContent(
                 )
             }
             Spacer(Modifier.height(PANEL_GAP))
-            panel(ui.me, Modifier.align(Alignment.Start).padding(horizontal = 8.dp))
+            // My panel, with the emoji button in the space to its right.
+            Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                panel(ui.me, Modifier.onGloballyPositioned { myPanel = it.boundsInRoot() })
+                Spacer(Modifier.weight(1f))
+                Box {
+                    EmojiButton(stringResource(R.string.emoji_open), enabled = chat.canSend, onClick = { showTray = true })
+                    if (showTray) EmojiTray(onPick = onEmoji, onDismiss = { showTray = false })
+                }
+            }
             Spacer(Modifier.weight(1f))
         }
-        if (over) WinOverlay(ui, shown, animator.fx, onRematch, onHome)
+        if (over) WinOverlay(ui, shown, animator.fx, onRematch, onHome, chat.unread, onOpenChat)
         PillHost(
             animator.pills,
             persistent = connectionPill(ui, over, now),
             modifier = Modifier.align(Alignment.TopCenter).safeDrawingPadding().padding(top = 60.dp),
         )
+        // Above everything (also the game over screen). Neither takes touches.
+        val spots = myPanel?.let { me -> theirPanel?.let { PanelSpots(me, it) } }
+        EmojiOverlay(flights, spots, animator.fx)
+        SpeechBubble(bubble, theirPanel, ui.me.opponent, onGone = { bubble = null })
     }
 }
 
@@ -357,6 +423,8 @@ private fun TopBar(
     onRules: () -> Unit,
     onToggleMute: () -> Unit,
     onSettings: () -> Unit,
+    unread: Int,
+    onChat: () -> Unit,
 ) {
     Row(
         Modifier.fillMaxWidth().height(52.dp).padding(horizontal = 12.dp),
@@ -371,6 +439,7 @@ private fun TopBar(
                 .padding(horizontal = 14.dp, vertical = 6.dp),
         )
         Spacer(Modifier.weight(1f))
+        ChatButton(unread, onChat)
         GlyphButton(Glyph.HELP, stringResource(R.string.game_how_to_play), onRules)
         GlyphButton(
             if (muted) Glyph.SOUND_OFF else Glyph.SOUND_ON,
@@ -405,7 +474,7 @@ private fun connectionPill(ui: GameUi, over: Boolean, now: () -> Long): Pill? {
  * gentler "Good game!". Both see the reason, the rematch state and the Rematch / Home buttons.
  */
 @Composable
-private fun WinOverlay(ui: GameUi, game: RoomGame, fx: GameFx, onRematch: () -> Unit, onHome: () -> Unit) {
+private fun WinOverlay(ui: GameUi, game: RoomGame, fx: GameFx, onRematch: () -> Unit, onHome: () -> Unit, unread: Int, onChat: () -> Unit) {
     val s = game.state
     val winner = checkNotNull(s.winner)
     val iWon = winner == ui.me
@@ -463,6 +532,8 @@ private fun WinOverlay(ui: GameUi, game: RoomGame, fx: GameFx, onRematch: () -> 
                 height = 52.dp,
                 modifier = Modifier.fillMaxWidth(0.8f),
             )
+            // Talk about a rematch.
+            ChatButton(unread, onChat)
         }
     }
 }

@@ -11,6 +11,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
@@ -24,7 +25,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 
 /** Small icons drawn in code (the app bundles no icon font). */
-enum class Glyph { HELP, SOUND_ON, SOUND_OFF, SETTINGS }
+enum class Glyph { HELP, SOUND_ON, SOUND_OFF, SETTINGS, CHAT }
 
 /** A round, translucent icon button for the slim top bar. */
 @Composable
@@ -76,6 +77,15 @@ fun DrawScope.drawGlyph(glyph: Glyph, color: Color) {
             }
             drawCircle(color, w * 0.33f, c)
             drawCircle(Color.Black.copy(alpha = 0.35f), w * 0.13f, c)
+        }
+        Glyph.CHAT -> {
+            // A speech bubble with a tail and three dots.
+            val bubble = Path().apply {
+                addRoundRect(RoundRect(w * 0.06f, w * 0.1f, w * 0.94f, w * 0.72f, w * 0.18f, w * 0.18f))
+                moveTo(w * 0.24f, w * 0.68f); lineTo(w * 0.2f, w * 0.94f); lineTo(w * 0.46f, w * 0.7f); close()
+            }
+            drawPath(bubble, color)
+            for (i in 0..2) drawCircle(Color.Black.copy(alpha = 0.35f), w * 0.065f, Offset(w * (0.3f + 0.2f * i), w * 0.41f))
         }
     }
 }

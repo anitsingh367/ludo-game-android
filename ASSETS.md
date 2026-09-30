@@ -18,6 +18,20 @@ files apart from the launcher icon, which is a vector drawable made for this pro
 | Icons (help, sound, settings) | `ui/components/Glyphs.kt` |
 | Launcher icon | `app/src/main/res/drawable/ic_launcher_*.xml` |
 
+## Animated emoji
+
+| Files (`app/src/main/res/raw/`) | What | Source | License |
+|---|---|---|---|
+| `emoji_<code point>.json` (16 files, about 1.1 MB) | Animated emoji (Lottie) for chat reactions | **Noto Emoji Animation** by Google, <https://googlefonts.github.io/noto-emoji-animation/>; each file downloaded from `https://fonts.gstatic.com/s/e/notoemoji/latest/<code point>/lottie.json` | **CC BY 4.0**, <https://creativecommons.org/licenses/by/4.0/> (full legal code: <https://creativecommons.org/licenses/by/4.0/legalcode>) |
+
+Code points: 1f602 😂, 1f60d 😍, 1f60e 😎, 1f914 🤔, 1f62e 😮, 1f622 😢, 1f621 😡, 1f608 😈, 1f44e 👎,
+1f44f 👏, 1f64f 🙏, 1f525 🔥, 1f389 🎉, 1f480 💀, 1f91e 🤞, 1f44b 👋. All 16 exist in the animated set.
+
+Attribution, as shown in the app (Settings → Credits, with links to the source and the license):
+"Animated emoji: Noto Emoji Animation by Google, licensed under CC BY 4.0". The files are bundled
+unchanged. CC BY 4.0 allows use in apps, including commercial ones, as long as this credit, a link to
+the license, and a note of any changes are given.
+
 ## Font
 
 | File | Font | Source | License |
@@ -46,5 +60,6 @@ reproducible). No recordings or third-party samples are used. They are released 
 | `sfx_lose.wav` | Losing | Two soft falling notes (C5, G4) |
 | `sfx_click.wav` | Button press | Very short pop |
 | `sfx_your_turn.wav` | Your turn | Two-note chime E5 → A5 |
+| `sfx_pop.wav` | An emoji reaction arriving | Quick upward blip 520 → 980 Hz with a tiny click (generated last, so it changes no other sound) |
 
 To regenerate: `python3 tools/generate_sounds.py` from the project root.

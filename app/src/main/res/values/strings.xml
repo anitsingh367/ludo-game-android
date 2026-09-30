@@ -106,4 +106,37 @@
     <string name="rules_title">How to play</string>
     <string name="rules_body">• Roll the dice on your turn, then tap a glowing token to move it.\n• A token leaves the yard only on a 6.\n• A 6 gives you another roll. Three 6s in a row lose the turn.\n• Land on a single opponent token to send it back to its yard and roll again. Star squares and start squares are safe.\n• Two or more tokens of one color on one square are a safe pair. A safe pair cannot be captured. Any token can pass it or land on its square to share it.\n• You need the exact number to reach home. A token reaching home gives another roll.\n• You have 30 seconds per turn. Miss 3 turns in a row and you lose.\n• First to bring all four tokens home wins.\n• Lucky Boost 🍀 (a room setting, on by default): if none of your tokens is on the board and you have rolled no 6 for 3 turns in a row, your chance of a 6 goes up: 1 in 3 on the next turn, then 1 in 2, and the turn after that is always a 6. It never applies while you have a token on the board (the home column counts).</string>
     <string name="close">Close</string>
+    <string name="settings_mute_opponent">Mute opponent</string>
+    <string name="settings_mute_opponent_hint">Hide their chat messages and emojis for the rest of this game</string>
+    <string name="settings_credits">Credits</string>
+    <string name="credits_title">Credits</string>
+    <string name="credits_emoji">Animated emoji: Noto Emoji Animation by Google, licensed under CC BY 4.0</string>
+    <string name="credits_emoji_link">Noto Emoji Animation</string>
+    <string name="credits_license_link">CC BY 4.0 license</string>
+    <string name="credits_sounds">Sounds: original, made for this app. Font: Baloo 2, SIL Open Font License.</string>
+    <string name="credits_close">Close</string>
+
+    <!-- Chat and emoji reactions -->
+    <string name="chat_open">Chat</string>
+    <string name="chat_unread">%1$d unread</string>
+    <string name="chat_empty">No messages yet. Say hi!</string>
+    <string name="chat_hint">Message…</string>
+    <string name="chat_send">Send</string>
+    <string name="chat_more">More options</string>
+    <string name="chat_report">Report player</string>
+    <string name="chat_report_title">Report %1$s?</string>
+    <string name="chat_report_body">Their last 20 messages in this room are saved for review.</string>
+    <string name="chat_report_confirm">Report</string>
+    <string name="chat_report_done">Report sent. Thank you.</string>
+    <string name="chat_report_failed">Couldn\'t send the report</string>
+    <string name="chat_muted_note">%1$s is muted</string>
+    <string name="emoji_open">Send an emoji</string>
+    <string-array name="chat_phrases">
+        <item>Good luck!</item>
+        <item>Nice move!</item>
+        <item>Oops 😅</item>
+        <item>Hurry up!</item>
+        <item>Well played</item>
+        <item>Rematch?</item>
+    </string-array>
 </resources>

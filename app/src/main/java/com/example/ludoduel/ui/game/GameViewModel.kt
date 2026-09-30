@@ -4,12 +4,17 @@ import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.ludoduel.AppContainer
+import com.example.ludoduel.data.ChatMessage
+import com.example.ludoduel.data.ChatRules
+import com.example.ludoduel.data.ChatType
 import com.example.ludoduel.data.GameReducer
+import com.example.ludoduel.data.NewMessages
 import com.example.ludoduel.data.RoomEvent
 import com.example.ludoduel.data.RoomGame
 import com.example.ludoduel.data.RoomStatus
 import com.example.ludoduel.data.SCHEMA_VERSION
 import com.example.ludoduel.data.Seats
+import com.example.ludoduel.data.SendLimiter
 import com.example.ludoduel.engine.Action
 import com.example.ludoduel.engine.ActionType
 import com.example.ludoduel.engine.Dice
@@ -17,7 +22,9 @@ import com.example.ludoduel.engine.LudoEngine
 import com.example.ludoduel.engine.Phase
 import com.example.ludoduel.engine.PlayerColor
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.collectLatest
@@ -46,6 +53,28 @@ data class GameUi(
     val luckyBoost: Boolean = false,
 )
 
+/** The chat as the screen shows it. */
+data class ChatUi(
+    /** Oldest first. The opponent's messages are left out while they are muted. */
+    val messages: List<ChatMessage> = emptyList(),
+    val myUid: String = "",
+    /** uid -> player name. */
+    val names: Map<String, String> = emptyMap(),
+    /** The opponent's texts and phrases that arrived while the chat was closed. */
+    val unread: Int = 0,
+    val muteOpponent: Boolean = false,
+    /** Online, in a loaded room. */
+    val canSend: Boolean = false,
+)
+
+/** Things to show once, for new messages only (never for history, see [NewMessages]). */
+sealed interface ChatEvent {
+    /** An emoji reaction: it flies from the sender's panel to the other player's. */
+    data class Emoji(val id: String, val emojiId: String, val fromMe: Boolean) : ChatEvent
+    /** The opponent's text or phrase while the chat is closed: a speech bubble by their panel. */
+    data class Bubble(val id: String, val text: String) : ChatEvent
+}
+
 /**
  * Drives the game screen. The UI renders only from the room state received from Firebase;
  * every action goes through a transaction in [com.example.ludoduel.data.RoomRepository.submit].
@@ -69,6 +98,29 @@ class GameViewModel(private val c: AppContainer, saved: SavedStateHandle) : View
     val ui: StateFlow<GameUi> = combine(room, uid, c.connection.connected, busy, ::buildUi)
         .stateIn(viewModelScope, SharingStarted.Eagerly, GameUi())
 
+    private val chatOpen = MutableStateFlow(false)
+    private val unread = MutableStateFlow(0)
+    /** Hides the opponent's messages, bubbles and emojis for the rest of this game screen. */
+    private val muteOpponent = MutableStateFlow(false)
+    private val newMessages = NewMessages()
+    private val emojiLimit = SendLimiter(ChatRules.EMOJI_INTERVAL_MILLIS)
+    private val textLimit = SendLimiter(ChatRules.TEXT_INTERVAL_MILLIS)
+    private val _chatEvents = MutableSharedFlow<ChatEvent>(extraBufferCapacity = 16)
+    val chatEvents: SharedFlow<ChatEvent> = _chatEvents
+
+    val chat: StateFlow<ChatUi> = combine(room, uid, c.connection.connected, unread, muteOpponent) { event, id, online, unreadCount, mute ->
+        val r = (event as? RoomEvent.Loaded)?.room ?: return@combine ChatUi()
+        val myUid = id.orEmpty()
+        ChatUi(
+            messages = if (mute) r.chat.filter { it.uid == myUid } else r.chat,
+            myUid = myUid,
+            names = r.players.mapValues { it.value.name },
+            unread = unreadCount,
+            muteOpponent = mute,
+            canSend = online && id != null,
+        )
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, ChatUi())
+
     init {
         viewModelScope.launch {
             val id = c.auth.signIn()
@@ -79,6 +131,7 @@ class GameViewModel(private val c: AppContainer, saved: SavedStateHandle) : View
         }
         runTimers()
         startRematchWhenAgreed()
+        watchChat()
     }
 
     override fun onCleared() {
@@ -113,6 +166,87 @@ class GameViewModel(private val c: AppContainer, saved: SavedStateHandle) : View
         // Taps on tokens that are not legal moves are ignored.
         if (token !in ui.movable) return
         viewModelScope.launch { act(game, Action.Move(token)) }
+    }
+
+    /** Sends an emoji reaction. False when it is too soon after the last one (the tray shakes). */
+    fun sendEmoji(emojiId: String): Boolean {
+        if (!chat.value.canSend || !emojiLimit.tryAcquire(System.currentTimeMillis())) return false
+        sendChat(ChatType.EMOJI, null, emojiId)
+        return true
+    }
+
+    /** Sends typed text (cleaned, see [ChatRules.clean]). False when empty, too long or too soon. */
+    fun sendText(raw: String): Boolean {
+        val text = ChatRules.clean(raw) ?: return false
+        return sendMessage(ChatType.TEXT, text)
+    }
+
+    /** Sends one of the quick phrases. False when too soon. */
+    fun sendPhrase(text: String): Boolean = sendMessage(ChatType.PHRASE, text)
+
+    private fun sendMessage(type: ChatType, text: String): Boolean {
+        if (!chat.value.canSend || !textLimit.tryAcquire(System.currentTimeMillis())) return false
+        sendChat(type, text, null)
+        return true
+    }
+
+    private fun sendChat(type: ChatType, text: String?, emojiId: String?) {
+        val r = (room.value as? RoomEvent.Loaded)?.room ?: return
+        val id = uid.value ?: return
+        viewModelScope.launch { c.rooms.sendChat(code, id, type, text, emojiId, r.chat, r.chatSeq) }
+    }
+
+    /** The chat sheet opened or closed. Opening it marks everything as read. */
+    fun setChatOpen(open: Boolean) {
+        chatOpen.value = open
+        if (open) unread.value = 0
+    }
+
+    fun setMuteOpponent(mute: Boolean) {
+        muteOpponent.value = mute
+        if (mute) unread.value = 0
+    }
+
+    /** Reports the opponent with the last 20 messages of the room. [onDone] is told whether it was saved. */
+    fun reportOpponent(onDone: (Boolean) -> Unit) {
+        val r = (room.value as? RoomEvent.Loaded)?.room ?: return onDone(false)
+        val id = uid.value ?: return onDone(false)
+        val opponentUid = r.seats?.let { if (it.hostUid == id) it.guestUid else it.hostUid } ?: return onDone(false)
+        viewModelScope.launch {
+            onDone(runCatching { c.rooms.report(code, id, opponentUid, r.chat.takeLast(REPORT_MESSAGES)) }.isSuccess)
+        }
+    }
+
+    /**
+     * Turns new chat messages into flights and bubbles. The first snapshot after opening the screen
+     * and the first after a reconnect are history only, so nothing old is replayed.
+     */
+    private fun watchChat() {
+        viewModelScope.launch {
+            var seenOnline = false
+            var dropped = false
+            c.connection.connected.collect { online ->
+                if (online && dropped) newMessages.reset()
+                if (online) seenOnline = true
+                dropped = !online && seenOnline
+            }
+        }
+        viewModelScope.launch {
+            room.collect { event ->
+                val r = (event as? RoomEvent.Loaded)?.room ?: return@collect
+                for (m in newMessages.of(r.chat)) {
+                    val mine = m.uid == uid.value
+                    if (!mine && muteOpponent.value) continue
+                    when (m.type) {
+                        ChatType.EMOJI -> _chatEvents.tryEmit(ChatEvent.Emoji(m.id, checkNotNull(m.emojiId), mine))
+                        ChatType.TEXT, ChatType.PHRASE -> if (!mine && !chatOpen.value) {
+                            unread.value++
+                            _chatEvents.tryEmit(ChatEvent.Bubble(m.id, checkNotNull(m.text)))
+                        }
+                    }
+                }
+            }
+        }
     }
 
     fun requestRematch() {
@@ -274,5 +408,7 @@ class GameViewModel(private val c: AppContainer, saved: SavedStateHandle) : View
         const val AUTO_MOVE_DELAY_MILLIS = 800L
         const val TIMEOUT_MARGIN_MILLIS = 1_000L
         const val TIMEOUT_RETRY_MILLIS = 2_000L
+        /** How many recent messages a report includes. */
+        const val REPORT_MESSAGES = 20
     }
 }

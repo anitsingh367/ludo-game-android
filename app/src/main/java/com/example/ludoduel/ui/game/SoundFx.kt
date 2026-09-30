@@ -46,6 +46,7 @@ class SoundFx(context: Context) : GameFx {
         Sfx.LOSE to R.raw.sfx_lose,
         Sfx.CLICK to R.raw.sfx_click,
         Sfx.YOUR_TURN to R.raw.sfx_your_turn,
+        Sfx.POP to R.raw.sfx_pop,
     ).mapValues { (_, res) -> pool.load(context, res, 1) }
 
     private val vibrator: Vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -67,6 +68,7 @@ class SoundFx(context: Context) : GameFx {
         val effect = when (kind) {
             Buzz.ROLL -> VibrationEffect.createOneShot(18, 70)
             Buzz.PICK -> VibrationEffect.createOneShot(12, 60)
+            Buzz.EMOJI -> VibrationEffect.createOneShot(20, 60)
             Buzz.CAPTURE -> VibrationEffect.createOneShot(45, 180)
             Buzz.HOME -> VibrationEffect.createWaveform(longArrayOf(0, 30, 60, 40), intArrayOf(0, 140, 0, 200), -1)
         }
